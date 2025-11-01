@@ -391,6 +391,8 @@ export default function Room() {
       toast.error("Failed to delete share");
     } else {
       toast.success("Share deleted");
+      // Reload room to update shares list (triggers FileUpload refreshTrigger)
+      await loadRoom();
     }
   };
 
@@ -593,6 +595,7 @@ export default function Room() {
                       encryptionKey={encryptionKey}
                       isPasswordKey={isPasswordKey}
                       disabled={room?.permissions === "view"}
+                      refreshTrigger={shares.length} // Trigger refetch when shares change (including deletions)
                     />
                   </div>
                 </TabsContent>

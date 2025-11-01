@@ -187,11 +187,44 @@ export function isEncrypted(data: string): boolean {
  */
 export function verifyEncryption(encryptedData: string, originalData: string): boolean {
   // Must be different from original
-  if (encryptedData === originalData) return false;
+  if (encryptedData === originalData) {
+    console.error("verifyEncryption: Encrypted data equals original");
+    return false;
+  }
+  
   // Must have encryption format (contains : separator)
-  if (!isEncrypted(encryptedData)) return false;
-  // Encrypted data should be significantly longer than original (base64 encoding + IV + salt)
-  if (encryptedData.length < originalData.length * 1.5) return false;
+  if (!isEncrypted(encryptedData)) {
+    console.error("verifyEncryption: Data doesn't have encryption format", { 
+      hasColon: encryptedData.includes(":"),
+      parts: encryptedData.split(":").length 
+    });
+    return false;
+  }
+  
+  // For password-based encryption (3 parts: salt:iv:encrypted), minimum size is ~40 chars
+  // For key-based encryption (2 parts: iv:encrypted), minimum size is ~25 chars
+  const parts = encryptedData.split(":");
+  const minEncryptedLength = parts.length === 3 ? 40 : 25; // Password-based needs salt too
+  
+  // Encrypted data must be longer than original and meet minimum length
+  // For very short strings, use a more lenient check
+  // Password-based: salt (~24) + IV (~18) + encrypted (variable) + separators = ~45-50+ for normal content
+  // But for very short strings, total can be ~40-45 chars
+  const lengthCheck = encryptedData.length >= Math.max(
+    originalData.length * 1.1, // At least 10% longer (lenient for short strings)
+    minEncryptedLength // Minimum absolute length for encrypted data
+  );
+  
+  if (!lengthCheck) {
+    console.error("verifyEncryption: Length check failed", {
+      originalLength: originalData.length,
+      encryptedLength: encryptedData.length,
+      requiredMin: Math.max(originalData.length * 1.2, minEncryptedLength),
+      partsCount: parts.length
+    });
+    return false;
+  }
+  
   return true;
 }
 

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -11,10 +11,41 @@ interface FileUploadProps {
   encryptionKey: string | null;
   isPasswordKey: boolean;
   disabled?: boolean;
+  refreshTrigger?: number; // Pass shares.length or timestamp to trigger refetch
 }
 
-export function FileUpload({ roomId, onUploadComplete, encryptionKey, isPasswordKey, disabled }: FileUploadProps) {
+const MAX_TOTAL_FILE_SIZE = 20 * 1024 * 1024; // 20MB total limit per room
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB per file limit
+
+export function FileUpload({ roomId, onUploadComplete, encryptionKey, isPasswordKey, disabled, refreshTrigger }: FileUploadProps) {
   const [uploading, setUploading] = useState(false);
+  const [totalFileSize, setTotalFileSize] = useState<number>(0);
+  const [remainingSpace, setRemainingSpace] = useState<number>(MAX_TOTAL_FILE_SIZE);
+
+  // Fetch current total file size for the room
+  const fetchTotalFileSize = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("shares")
+        .select("file_size")
+        .eq("room_id", roomId)
+        .eq("type", "file");
+
+      if (error) throw error;
+
+      const total = data?.reduce((sum, share) => sum + (share.file_size || 0), 0) || 0;
+      setTotalFileSize(total);
+      setRemainingSpace(Math.max(0, MAX_TOTAL_FILE_SIZE - total));
+    } catch (error) {
+      console.error("Error fetching total file size:", error);
+    }
+  };
+
+  useEffect(() => {
+    if (roomId) {
+      fetchTotalFileSize();
+    }
+  }, [roomId, refreshTrigger]); // Refetch when refreshTrigger changes (e.g., after deletion)
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -25,9 +56,18 @@ export function FileUpload({ roomId, onUploadComplete, encryptionKey, isPassword
       return;
     }
 
-    // Check file size (10MB limit)
-    if (file.size > 10 * 1024 * 1024) {
+    // Check individual file size (10MB limit per file)
+    if (file.size > MAX_FILE_SIZE) {
       toast.error("File size must be less than 10MB");
+      return;
+    }
+
+    // Check total room file size limit (20MB total)
+    const newTotal = totalFileSize + file.size;
+    if (newTotal > MAX_TOTAL_FILE_SIZE) {
+      const usedMB = (totalFileSize / (1024 * 1024)).toFixed(2);
+      const remainingMB = (remainingSpace / (1024 * 1024)).toFixed(2);
+      toast.error(`Total file size limit (20MB) exceeded. Used: ${usedMB}MB, Remaining: ${remainingMB}MB`);
       return;
     }
 
@@ -77,8 +117,15 @@ export function FileUpload({ roomId, onUploadComplete, encryptionKey, isPassword
 
       if (shareError) throw shareError;
 
+      // Update total file size after successful upload
+      setTotalFileSize(newTotal);
+      setRemainingSpace(MAX_TOTAL_FILE_SIZE - newTotal);
+
       toast.success("File uploaded!");
       onUploadComplete();
+      
+      // Refetch to ensure we have accurate data after any deletions
+      await fetchTotalFileSize();
     } catch (error) {
       console.error("Error uploading file:", error);
       toast.error("Failed to upload file");
@@ -106,7 +153,14 @@ export function FileUpload({ roomId, onUploadComplete, encryptionKey, isPassword
             <p className="text-sm font-medium">
               {uploading ? "Uploading..." : "Click to upload or drag and drop"}
             </p>
-            <p className="text-xs text-muted-foreground mt-1">Max file size: 10MB</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Max file: 10MB • Room limit: 20MB total
+              {remainingSpace < MAX_TOTAL_FILE_SIZE && (
+                <span className="ml-2 text-primary">
+                  ({(remainingSpace / (1024 * 1024)).toFixed(2)}MB remaining)
+                </span>
+              )}
+            </p>
           </div>
           {uploading && (
             <div className="w-full max-w-xs h-2 bg-muted rounded-full overflow-hidden">
