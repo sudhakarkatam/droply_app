@@ -17,7 +17,7 @@ import { FileUpload } from "@/components/FileUpload";
 import { PasswordDialog } from "@/components/PasswordDialog";
 import { CodeSnippetUpload } from "@/components/CodeSnippetUpload";
 import { RoomSettings } from "@/components/RoomSettings";
-import { encrypt, hashPassword, generateKey, verifyEncryption } from "@/lib/crypto";
+import { encrypt, decrypt, hashPassword, generateKey, verifyEncryption, isEncrypted } from "@/lib/crypto";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 
 export default function Room() {
@@ -454,23 +454,44 @@ export default function Room() {
     permissions?: "view" | "edit";
     expiry?: string | null;
   }) => {
-    if (!isCreator) {
-      toast.error("Only room creator can modify settings");
-      return;
+    // For password-protected rooms: anyone with password can modify settings
+    // For non-password rooms: check if creator token exists
+    if (room?.password) {
+      // Password-protected room: verify we have the password
+      if (!encryptionKey) {
+        toast.error("Password required to update settings");
+        setShowPasswordDialog(true);
+        return;
+      }
+    } else {
+      // Non-password room: check creator token if room has one
+      const creatorToken = localStorage.getItem(`room_creator_${id}`);
+      if (room?.creator_token && (!creatorToken || creatorToken !== room.creator_token)) {
+        toast.error("Only room creator can modify settings");
+        return;
+      }
     }
 
-    // Get creator token from localStorage
-    const creatorToken = localStorage.getItem(`room_creator_${id}`);
-    if (!creatorToken) {
-      toast.error("Creator token not found. Cannot update room settings.");
-      return;
-    }
-
-    // Prepare parameters for RPC call - only include what needs updating
+    // Prepare parameters for RPC call
     const rpcParams: any = {
       p_room_id: id,
-      p_creator_token: creatorToken,
     };
+
+    // For password-protected rooms, send current password hash for verification
+    if (room?.password) {
+      const currentPassword = sessionStorage.getItem(`room_password_${id}`);
+      if (!currentPassword) {
+        toast.error("Password required to update settings");
+        return;
+      }
+      rpcParams.p_current_password_hash = await hashPassword(currentPassword.trim());
+    } else {
+      // For non-password rooms, send creator_token if available
+      const creatorToken = localStorage.getItem(`room_creator_${id}`);
+      if (creatorToken) {
+        rpcParams.p_creator_token = creatorToken;
+      }
+    }
 
     // Handle password changes
     if (updates.password !== undefined) {
@@ -478,13 +499,6 @@ export default function Room() {
       if (updates.password === null) {
         // Removing password - pass null explicitly
         rpcParams.p_password = null;
-        // Before removing, store old password if it exists (for decrypting old content)
-        const oldPassword = sessionStorage.getItem(`room_password_${id}`);
-        if (oldPassword) {
-          // Store old password in old keys array for decryption
-          setOldEncryptionKeys(prev => [...prev, oldPassword]);
-          sessionStorage.setItem(`room_password_old_${id}`, oldPassword);
-        }
         // Generate new encryption key for future content
         const newKey = await generateKey();
         sessionStorage.setItem(`room_key_${id}`, newKey);
@@ -492,30 +506,148 @@ export default function Room() {
         setIsPasswordKey(false);
         sessionStorage.removeItem(`room_password_${id}`);
         localStorage.removeItem(`room_password_${id}`);
+        // Clear old encryption keys since password is removed
+        setOldEncryptionKeys([]);
+        sessionStorage.removeItem(`room_password_old_${id}`);
       } else {
-        // Setting or changing password - hash it
+        // Setting or changing password
         const trimmedPassword = updates.password.trim();
-        rpcParams.p_password = await hashPassword(trimmedPassword);
+        const newPasswordHash = await hashPassword(trimmedPassword);
+        rpcParams.p_password = newPasswordHash;
         
-        // If there was an old password, store it for decrypting old content
+        // Get old password before changing (if any)
         const oldPassword = sessionStorage.getItem(`room_password_${id}`);
-        if (oldPassword && oldPassword !== trimmedPassword) {
-          // Store old password in old keys array and sessionStorage
-          setOldEncryptionKeys(prev => {
-            if (!prev.includes(oldPassword)) {
-              return [...prev, oldPassword];
+        const wasPasswordProtected = !!room?.password;
+        
+        // If password is being changed or added (even to public room), re-encrypt all existing content
+        // This ensures all content uses the latest password
+        // Note: oldPassword might be null if adding password to public room - that's OK, we'll encrypt unencrypted content
+        if (oldPassword !== trimmedPassword) {
+          try {
+            // Fetch all shares in the room
+            const { data: allShares, error: sharesError } = await supabase
+              .from("shares")
+              .select("*")
+              .eq("room_id", id);
+
+            if (sharesError) {
+              console.error("Error fetching shares for re-encryption:", sharesError);
+              toast.error("Failed to fetch shares for re-encryption");
+              throw sharesError;
             }
-            return prev;
-          });
-          sessionStorage.setItem(`room_password_old_${id}`, oldPassword);
+
+            if (allShares && allShares.length > 0) {
+              // Re-encrypt each share with the new password
+              const reEncryptionPromises = allShares.map(async (share) => {
+                try {
+                  // Get decrypted content
+                  let decryptedContent: string | null = null;
+                  let decryptedFileName: string | null = null;
+
+                  // Handle content (text, code, URLs)
+                  if (share.content) {
+                    if (wasPasswordProtected && isEncrypted(share.content)) {
+                      // Content was encrypted with old password - decrypt it
+                      if (oldPassword) {
+                        decryptedContent = await decrypt(share.content, oldPassword, true);
+                      } else {
+                        // This shouldn't happen, but skip if no old password
+                        return null;
+                      }
+                    } else {
+                      // Content was never encrypted (from public room) - use as-is
+                      decryptedContent = share.content;
+                    }
+                  }
+
+                  // Handle file names
+                  if (share.type === "file" && share.file_name) {
+                    if (wasPasswordProtected && isEncrypted(share.file_name)) {
+                      // File name was encrypted with old password - decrypt it
+                      if (oldPassword) {
+                        decryptedFileName = await decrypt(share.file_name, oldPassword, true);
+                      } else {
+                        // Fallback to original if decryption fails
+                        decryptedFileName = share.file_name;
+                      }
+                    } else {
+                      // File name was never encrypted - use as-is
+                      decryptedFileName = share.file_name;
+                    }
+                  }
+
+                  // Skip if no content to encrypt
+                  if (!decryptedContent && !decryptedFileName) {
+                    return null;
+                  }
+
+                  // Encrypt with new password
+                  const updateData: any = {};
+                  
+                  if (decryptedContent) {
+                    const reEncryptedContent = await encrypt(decryptedContent, trimmedPassword, true);
+                    // Verify encryption succeeded
+                    if (!verifyEncryption(reEncryptedContent, decryptedContent)) {
+                      console.error("Re-encryption verification failed for share content", share.id);
+                      return null;
+                    }
+                    updateData.content = reEncryptedContent;
+                  }
+
+                  if (decryptedFileName) {
+                    const reEncryptedFileName = await encrypt(decryptedFileName, trimmedPassword, true);
+                    if (!verifyEncryption(reEncryptedFileName, decryptedFileName)) {
+                      console.error("Re-encryption verification failed for share file name", share.id);
+                      // Don't fail entire operation, just skip file name update
+                    } else {
+                      updateData.file_name = reEncryptedFileName;
+                    }
+                  }
+
+                  // Update share in database
+                  const { error: updateError } = await supabase
+                    .from("shares")
+                    .update(updateData)
+                    .eq("id", share.id);
+
+                  if (updateError) {
+                    console.error("Error updating share during re-encryption:", updateError, share.id);
+                    return null;
+                  }
+
+                  return share.id;
+                } catch (error) {
+                  console.error("Error re-encrypting share:", share.id, error);
+                  return null;
+                }
+              });
+
+              // Wait for all re-encryptions to complete
+              const results = await Promise.all(reEncryptionPromises);
+              const successCount = results.filter(r => r !== null).length;
+              const totalCount = allShares.length;
+              
+              if (successCount > 0) {
+                toast.success(`Re-encrypted ${successCount} of ${totalCount} item(s) with new password`);
+              } else if (totalCount > 0) {
+                toast.warning("Failed to re-encrypt existing content. Please try again.");
+              }
+            }
+          } catch (error) {
+            console.error("Error during content re-encryption:", error);
+            toast.error("Failed to re-encrypt existing content");
+            // Continue with password update even if re-encryption fails
+          }
         }
         
-        // Store original trimmed password for encryption in both localStorage and sessionStorage
-        // sessionStorage ensures it persists during the session for decryption
+        // Store new password
         sessionStorage.setItem(`room_password_${id}`, trimmedPassword);
         localStorage.setItem(`room_password_${id}`, trimmedPassword);
         setEncryptionKey(trimmedPassword);
         setIsPasswordKey(true);
+        // Clear old encryption keys since everything is now encrypted with new password
+        setOldEncryptionKeys([]);
+        sessionStorage.removeItem(`room_password_old_${id}`);
       }
     }
 
@@ -546,38 +678,63 @@ export default function Room() {
       throw new Error(data.error || "Update failed");
     }
 
-    // Reload room data after password change to ensure encryptionKey is properly set
+    // Reload room data after password change to ensure everything is updated
     await loadRoom(true);
     
-    // After password change, ensure encryptionKey is available for decryption
-    if (updates.password !== undefined && updates.password !== null) {
-      const trimmedPassword = updates.password.trim();
-      // Double-check encryptionKey is set (loadRoom should handle this, but ensure it)
-      if (!encryptionKey || encryptionKey !== trimmedPassword) {
-        setEncryptionKey(trimmedPassword);
-        setIsPasswordKey(true);
-      }
+    // Reload shares to show re-encrypted content
+    const { data: updatedShares } = await supabase
+      .from("shares")
+      .select("*")
+      .eq("room_id", id)
+      .order("created_at", { ascending: false });
+
+    if (updatedShares) {
+      setShares(updatedShares);
     }
   };
 
   const deleteRoom = async () => {
-    if (!isCreator) {
-      toast.error("Only room creator can delete the room");
-      return;
-    }
-
-    // Get creator token from localStorage
-    const creatorToken = localStorage.getItem(`room_creator_${id}`);
-    if (!creatorToken) {
-      toast.error("Creator token not found. Cannot delete room.");
-      return;
+    // For password-protected rooms: anyone with password can delete
+    // For non-password rooms: check if creator token exists
+    if (room?.password) {
+      // Password-protected room: verify we have the password
+      if (!encryptionKey) {
+        toast.error("Password required to delete room");
+        setShowPasswordDialog(true);
+        return;
+      }
+    } else {
+      // Non-password room: check creator token if room has one
+      const creatorToken = localStorage.getItem(`room_creator_${id}`);
+      if (room?.creator_token && (!creatorToken || creatorToken !== room.creator_token)) {
+        toast.error("Only room creator can delete the room");
+        return;
+      }
     }
 
     try {
-      const { data, error } = await supabase.rpc('delete_room', {
+      // Prepare RPC parameters
+      const rpcParams: any = {
         p_room_id: id,
-        p_creator_token: creatorToken
-      });
+      };
+
+      // For password-protected rooms, send current password hash for verification
+      if (room?.password) {
+        const currentPassword = sessionStorage.getItem(`room_password_${id}`);
+        if (!currentPassword) {
+          toast.error("Password required to delete room");
+          return;
+        }
+        rpcParams.p_current_password_hash = await hashPassword(currentPassword.trim());
+      } else {
+        // For non-password rooms, send creator_token if available
+        const creatorToken = localStorage.getItem(`room_creator_${id}`);
+        if (creatorToken) {
+          rpcParams.p_creator_token = creatorToken;
+        }
+      }
+
+      const { data, error } = await supabase.rpc('delete_room', rpcParams);
 
       if (error) {
         console.error("Error deleting room:", error);

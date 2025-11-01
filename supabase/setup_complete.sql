@@ -74,10 +74,13 @@ BEGIN
 END;
 $$;
 
--- Secure function to update room settings (validates creator_token)
+-- Secure function to update room settings (validates password for password-protected rooms)
+-- For password-protected rooms: requires current password hash
+-- For non-password rooms: requires creator_token (optional, can be NULL for backwards compatibility)
 CREATE OR REPLACE FUNCTION public.update_room_settings(
   p_room_id TEXT,
-  p_creator_token TEXT,
+  p_current_password_hash TEXT DEFAULT NULL,  -- Current password hash for verification
+  p_creator_token TEXT DEFAULT NULL,  -- Optional creator token (for non-password rooms)
   p_password TEXT DEFAULT NULL,
   p_permissions TEXT DEFAULT NULL,
   p_expires_at TIMESTAMP WITH TIME ZONE DEFAULT NULL,
@@ -91,27 +94,54 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  v_current_creator_token TEXT;
-  v_updated BOOLEAN := FALSE;
+  v_room_password TEXT;
+  v_room_creator_token TEXT;
+  v_authorized BOOLEAN := FALSE;
 BEGIN
-  -- Get current creator_token for the room
-  SELECT creator_token INTO v_current_creator_token
+  -- Get room password and creator_token
+  SELECT password, creator_token INTO v_room_password, v_room_creator_token
   FROM public.rooms
   WHERE id = p_room_id;
 
   -- Check if room exists
-  IF v_current_creator_token IS NULL THEN
+  IF v_room_password IS NULL THEN
     RETURN json_build_object(
       'success', false,
       'error', 'Room not found'
     );
   END IF;
 
-  -- Validate creator_token matches
-  IF v_current_creator_token != p_creator_token THEN
+  -- Determine authorization:
+  -- 1. If room has password: require current password hash to match
+  -- 2. If room has no password: require creator_token to match (if provided)
+  -- 3. If no password and no creator_token in room: allow update (public room)
+  IF v_room_password IS NOT NULL THEN
+    -- Password-protected room: verify current password
+    IF p_current_password_hash IS NULL OR p_current_password_hash != v_room_password THEN
+      RETURN json_build_object(
+        'success', false,
+        'error', 'Unauthorized: Invalid password'
+      );
+    END IF;
+    v_authorized := TRUE;
+  ELSIF v_room_creator_token IS NOT NULL AND p_creator_token IS NOT NULL THEN
+    -- Non-password room with creator: verify creator_token
+    IF v_room_creator_token != p_creator_token THEN
+      RETURN json_build_object(
+        'success', false,
+        'error', 'Unauthorized: Invalid creator token'
+      );
+    END IF;
+    v_authorized := TRUE;
+  ELSE
+    -- Public room (no password, no creator_token): allow update
+    v_authorized := TRUE;
+  END IF;
+
+  IF NOT v_authorized THEN
     RETURN json_build_object(
       'success', false,
-      'error', 'Unauthorized: Invalid creator token'
+      'error', 'Unauthorized'
     );
   END IF;
 
@@ -130,8 +160,7 @@ BEGIN
       WHEN p_update_expires_at THEN p_expires_at
       ELSE expires_at
     END
-  WHERE id = p_room_id
-    AND creator_token = p_creator_token;
+  WHERE id = p_room_id;
 
   -- Check if update was successful using FOUND (automatically set by PostgreSQL)
   IF FOUND THEN
@@ -150,7 +179,7 @@ COMMENT ON FUNCTION public.cleanup_expired_rooms IS
 'Function to delete expired rooms. Can be scheduled to run periodically.';
 
 COMMENT ON FUNCTION public.update_room_settings IS 
-'Secure function to update room settings. Requires valid creator_token. Direct table updates are blocked by RLS policy.';
+'Secure function to update room settings. For password-protected rooms: requires current password hash. For non-password rooms: requires creator_token (if room has one). Direct table updates are blocked by RLS policy.';
 
 -- Grant execute permissions
 GRANT EXECUTE ON FUNCTION public.cleanup_expired_rooms TO anon, authenticated;
@@ -172,6 +201,8 @@ DROP POLICY IF EXISTS "Anyone can create shares" ON public.shares;
 DROP POLICY IF EXISTS "Anyone can create shares in existing rooms" ON public.shares;
 DROP POLICY IF EXISTS "Anyone can delete shares" ON public.shares;
 DROP POLICY IF EXISTS "Anyone can update shares" ON public.shares;
+DROP POLICY IF EXISTS "Prevent share updates" ON public.shares;
+DROP POLICY IF EXISTS "Allow share updates in edit rooms" ON public.shares;
 
 -- ROOMS TABLE POLICIES
 
@@ -237,12 +268,25 @@ USING (
   )
 );
 
--- Prevent updates to shares (content should be immutable once created)
-CREATE POLICY "Prevent share updates"
+-- Allow updates only for re-encryption (when room permissions allow editing)
+-- This is needed for password change scenarios where content needs to be re-encrypted
+CREATE POLICY "Allow share updates in edit rooms"
 ON public.shares
 FOR UPDATE
-USING (false)
-WITH CHECK (false);
+USING (
+  EXISTS (
+    SELECT 1 FROM public.rooms 
+    WHERE rooms.id = shares.room_id
+      AND rooms.permissions = 'edit'
+  )
+)
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM public.rooms 
+    WHERE rooms.id = shares.room_id
+      AND rooms.permissions = 'edit'
+  )
+);
 
 -- ============================================
 -- STEP 6B: Create Delete Room Function
@@ -250,24 +294,51 @@ WITH CHECK (false);
 
 CREATE OR REPLACE FUNCTION public.delete_room(
     p_room_id TEXT,
-    p_creator_token TEXT
+    p_current_password_hash TEXT DEFAULT NULL,  -- Current password hash for verification
+    p_creator_token TEXT DEFAULT NULL  -- Optional creator token (for non-password rooms)
 )
 RETURNS JSON
 LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
 DECLARE
-    v_is_creator BOOLEAN;
+    v_room_password TEXT;
+    v_room_creator_token TEXT;
+    v_authorized BOOLEAN := FALSE;
 BEGIN
-    -- Check if the room exists and the creator token matches
-    SELECT EXISTS (
-        SELECT 1
-        FROM public.rooms
-        WHERE id = p_room_id AND creator_token = p_creator_token
-    ) INTO v_is_creator;
+    -- Get room password and creator_token
+    SELECT password, creator_token INTO v_room_password, v_room_creator_token
+    FROM public.rooms
+    WHERE id = p_room_id;
 
-    IF NOT v_is_creator THEN
-        RETURN json_build_object('success', FALSE, 'error', 'Unauthorized or room not found.');
+    -- Check if room exists
+    IF v_room_password IS NULL AND v_room_creator_token IS NULL THEN
+        RETURN json_build_object('success', FALSE, 'error', 'Room not found.');
+    END IF;
+
+    -- Determine authorization:
+    -- 1. If room has password: require current password hash to match
+    -- 2. If room has no password: require creator_token to match (if room has one)
+    -- 3. If no password and no creator_token in room: allow deletion (public room)
+    IF v_room_password IS NOT NULL THEN
+        -- Password-protected room: verify current password
+        IF p_current_password_hash IS NULL OR p_current_password_hash != v_room_password THEN
+            RETURN json_build_object('success', FALSE, 'error', 'Unauthorized: Invalid password.');
+        END IF;
+        v_authorized := TRUE;
+    ELSIF v_room_creator_token IS NOT NULL AND p_creator_token IS NOT NULL THEN
+        -- Non-password room with creator: verify creator_token
+        IF v_room_creator_token != p_creator_token THEN
+            RETURN json_build_object('success', FALSE, 'error', 'Unauthorized: Invalid creator token.');
+        END IF;
+        v_authorized := TRUE;
+    ELSE
+        -- Public room (no password, no creator_token): allow deletion
+        v_authorized := TRUE;
+    END IF;
+
+    IF NOT v_authorized THEN
+        RETURN json_build_object('success', FALSE, 'error', 'Unauthorized.');
     END IF;
 
     -- Delete associated shares first (CASCADE should handle this, but being explicit)
@@ -290,7 +361,7 @@ END;
 $$;
 
 -- Grant execute permissions
-GRANT EXECUTE ON FUNCTION public.delete_room(TEXT, TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.delete_room(TEXT, TEXT, TEXT) TO anon, authenticated;
 
 -- ============================================
 -- STEP 7: Create Storage Policies
