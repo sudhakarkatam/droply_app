@@ -1,0 +1,227 @@
+/**
+ * End-to-End Encryption utilities using Web Crypto API
+ * 
+ * Encryption strategy:
+ * - Password-protected rooms: Key derived from password using PBKDF2
+ * - Public rooms: Random key generated and stored in URL fragment (#key)
+ */
+
+const SALT_LENGTH = 16;
+const IV_LENGTH = 12;
+const KEY_LENGTH = 256;
+const ITERATIONS = 100000;
+
+/**
+ * Generate a random encryption key
+ */
+export async function generateKey(): Promise<string> {
+  const key = await crypto.subtle.generateKey(
+    { name: "AES-GCM", length: KEY_LENGTH },
+    true,
+    ["encrypt", "decrypt"]
+  );
+  const exported = await crypto.subtle.exportKey("raw", key);
+  return bufferToBase64(exported);
+}
+
+/**
+ * Derive a key from password using PBKDF2
+ */
+export async function deriveKeyFromPassword(
+  password: string,
+  salt: ArrayBuffer
+): Promise<CryptoKey> {
+  const encoder = new TextEncoder();
+  const passwordBuffer = encoder.encode(password);
+
+  const baseKey = await crypto.subtle.importKey(
+    "raw",
+    passwordBuffer,
+    "PBKDF2",
+    false,
+    ["deriveBits", "deriveKey"]
+  );
+
+  return crypto.subtle.deriveKey(
+    {
+      name: "PBKDF2",
+      salt,
+      iterations: ITERATIONS,
+      hash: "SHA-256",
+    },
+    baseKey,
+    { name: "AES-GCM", length: KEY_LENGTH },
+    false,
+    ["encrypt", "decrypt"]
+  );
+}
+
+/**
+ * Import a key from base64 string
+ */
+export async function importKey(keyString: string): Promise<CryptoKey> {
+  const keyBuffer = base64ToBuffer(keyString);
+  return crypto.subtle.importKey(
+    "raw",
+    keyBuffer,
+    { name: "AES-GCM", length: KEY_LENGTH },
+    true,
+    ["encrypt", "decrypt"]
+  );
+}
+
+/**
+ * Encrypt data using AES-GCM
+ */
+export async function encrypt(
+  data: string,
+  keySource: string | null,
+  isPasswordKey: boolean = false
+): Promise<string> {
+  const encoder = new TextEncoder();
+  const dataBuffer = encoder.encode(data);
+
+  let key: CryptoKey;
+  let salt: ArrayBuffer | null = null;
+
+  if (!keySource) {
+    // No encryption for rooms without password/key
+    return data;
+  }
+
+  if (isPasswordKey) {
+    // Derive key from password
+    const saltArray = new Uint8Array(SALT_LENGTH);
+    crypto.getRandomValues(saltArray);
+    salt = saltArray.buffer;
+    key = await deriveKeyFromPassword(keySource, salt);
+  } else {
+    // Import key directly
+    key = await importKey(keySource);
+  }
+
+  const ivArray = new Uint8Array(IV_LENGTH);
+  crypto.getRandomValues(ivArray);
+
+  const encryptedBuffer = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv: ivArray },
+    key,
+    dataBuffer
+  );
+
+  // Format: [salt?][iv][encrypted]
+  const parts = [];
+  if (salt) parts.push(bufferToBase64(salt));
+  parts.push(bufferToBase64(ivArray.buffer));
+  parts.push(bufferToBase64(encryptedBuffer));
+
+  return parts.join(":");
+}
+
+/**
+ * Decrypt data using AES-GCM
+ */
+export async function decrypt(
+  encryptedData: string,
+  keySource: string | null,
+  isPasswordKey: boolean = false
+): Promise<string> {
+  if (!keySource) {
+    // No decryption needed
+    return encryptedData;
+  }
+
+  try {
+    const parts = encryptedData.split(":");
+    
+    let key: CryptoKey;
+    let ivBuffer: ArrayBuffer;
+    let encrypted: ArrayBuffer;
+
+    if (isPasswordKey && parts.length === 3) {
+      // Password-based: salt:iv:encrypted
+      const saltBuffer = base64ToBuffer(parts[0]);
+      ivBuffer = base64ToBuffer(parts[1]);
+      encrypted = base64ToBuffer(parts[2]);
+      key = await deriveKeyFromPassword(keySource, saltBuffer);
+    } else if (!isPasswordKey && parts.length === 2) {
+      // Key-based: iv:encrypted
+      ivBuffer = base64ToBuffer(parts[0]);
+      encrypted = base64ToBuffer(parts[1]);
+      key = await importKey(keySource);
+    } else {
+      // Invalid format or unencrypted data
+      return encryptedData;
+    }
+
+    const decryptedBuffer = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: ivBuffer },
+      key,
+      encrypted
+    );
+
+    const decoder = new TextDecoder();
+    return decoder.decode(decryptedBuffer);
+  } catch (error) {
+    console.error("Decryption failed:", error);
+    // Return original data if decryption fails (might be unencrypted)
+    return encryptedData;
+  }
+}
+
+/**
+ * Check if data is encrypted
+ */
+export function isEncrypted(data: string): boolean {
+  if (!data || !data.includes(":")) return false;
+  const parts = data.split(":");
+  // Encrypted data should have format: [salt?][iv][encrypted] (2 or 3 parts)
+  // Password-based: 3 parts (salt:iv:encrypted)
+  // Key-based: 2 parts (iv:encrypted)
+  return parts.length === 2 || parts.length === 3;
+}
+
+/**
+ * Verify that content is properly encrypted for password-protected rooms
+ * Returns true if content is encrypted, false if it appears to be plaintext
+ */
+export function verifyEncryption(encryptedData: string, originalData: string): boolean {
+  // Must be different from original
+  if (encryptedData === originalData) return false;
+  // Must have encryption format (contains : separator)
+  if (!isEncrypted(encryptedData)) return false;
+  // Encrypted data should be significantly longer than original (base64 encoding + IV + salt)
+  if (encryptedData.length < originalData.length * 1.5) return false;
+  return true;
+}
+
+/**
+ * Hash password using SHA-256 for database storage
+ * This prevents admins from seeing the actual password
+ * Note: This is separate from PBKDF2 key derivation used for encryption
+ */
+export async function hashPassword(password: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  return bufferToBase64(hashBuffer);
+}
+
+// Utility functions
+function bufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+function base64ToBuffer(base64: string): ArrayBuffer {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes.buffer;
+}

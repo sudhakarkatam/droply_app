@@ -1,0 +1,124 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    --background: 20 14% 4%;
+    --foreground: 40 100% 98%;
+
+    --card: 20 14% 6%;
+    --card-foreground: 40 100% 98%;
+
+    --popover: 20 14% 8%;
+    --popover-foreground: 40 100% 98%;
+
+    --primary: 25 95% 58%;
+    --primary-foreground: 20 14% 4%;
+
+    --secondary: 45 90% 60%;
+    --secondary-foreground: 20 14% 4%;
+
+    --muted: 20 10% 20%;
+    --muted-foreground: 40 20% 60%;
+
+    --accent: 45 90% 60%;
+    --accent-foreground: 20 14% 4%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 40 100% 98%;
+
+    --border: 20 20% 18%;
+    --input: 20 20% 18%;
+    --ring: 25 95% 58%;
+
+    --radius: 1rem;
+
+    /* Warm gradient tokens */
+    --gradient-warm: linear-gradient(135deg, hsl(25 95% 58%) 0%, hsl(45 90% 60%) 100%);
+    --gradient-warm-subtle: linear-gradient(180deg, hsl(20 14% 4%) 0%, hsl(25 40% 8%) 100%);
+    --glow-orange: 0 0 60px hsl(25 95% 58% / 0.3);
+    --glow-yellow: 0 0 40px hsl(45 90% 60% / 0.2);
+    
+    /* Glassmorphism tokens */
+    --glass-bg: hsl(20 14% 8% / 0.5);
+    --glass-border: hsl(40 50% 60% / 0.2);
+    
+    /* Animation tokens */
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .dark {
+    --background: 20 14% 4%;
+    --foreground: 40 100% 98%;
+
+    --card: 20 14% 6%;
+    --card-foreground: 40 100% 98%;
+
+    --popover: 20 14% 8%;
+    --popover-foreground: 40 100% 98%;
+
+    --primary: 25 95% 58%;
+    --primary-foreground: 20 14% 4%;
+
+    --secondary: 45 90% 60%;
+    --secondary-foreground: 20 14% 4%;
+
+    --muted: 20 10% 20%;
+    --muted-foreground: 40 20% 60%;
+
+    --accent: 45 90% 60%;
+    --accent-foreground: 20 14% 4%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 40 100% 98%;
+
+    --border: 20 20% 18%;
+    --input: 20 20% 18%;
+    --ring: 25 95% 58%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    background: linear-gradient(135deg, hsl(20 14% 4%) 0%, hsl(25 40% 8%) 100%);
+    min-height: 100vh;
+  }
+}
+
+@layer utilities {
+  .glass-card {
+    background: hsl(var(--glass-bg));
+    border: 1px solid hsl(var(--glass-border));
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+
+  .gradient-warm {
+    background: var(--gradient-warm);
+  }
+
+  .text-gradient {
+    background: var(--gradient-warm);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .glow-orange {
+    box-shadow: var(--glow-orange);
+  }
+
+  .glow-yellow {
+    box-shadow: var(--glow-yellow);
+  }
+}
