@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { motion } from "framer-motion";
-import { Upload, Link2, FileText, Clock, Copy, CheckCircle2, Trash2, Lock, Code, File } from "lucide-react";
+import { Upload, Link2, FileText, Clock, Copy, CheckCircle2, Trash2, Lock, Code, File, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -39,6 +39,8 @@ export default function Room() {
   const [shareContentTab, setShareContentTab] = useState<string>("text");
   const [decryptedShares, setDecryptedShares] = useState<any[]>([]);
   const [copied, setCopied] = useState(false);
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [decryptedContentMap, setDecryptedContentMap] = useState<Map<string, string>>(new Map());
 
   useEffect(() => {
     if (!id) {
@@ -192,7 +194,7 @@ export default function Room() {
     }
   };
 
-  // Decrypt shares when shares or encryption key changes
+  // Decrypt shares and store decrypted content for searching
   useEffect(() => {
     const decryptShares = async () => {
       const decrypted = await Promise.all(
@@ -203,12 +205,49 @@ export default function Room() {
         })
       );
       setDecryptedShares(decrypted);
+
+      // Decrypt all content for search purposes
+      const contentMap = new Map<string, string>();
+      for (const share of shares) {
+        try {
+          if (share.content && (share.type === "text" || share.type === "code" || share.type === "url")) {
+            if (isEncrypted(share.content)) {
+              // Try to decrypt
+              if (encryptionKey) {
+                try {
+                  const decrypted = await decrypt(share.content, encryptionKey, isPasswordKey);
+                  if (!isEncrypted(decrypted)) {
+                    contentMap.set(share.id, decrypted);
+                  } else {
+                    // Decryption failed or result still encrypted, use original
+                    contentMap.set(share.id, share.content);
+                  }
+                } catch {
+                  // Decryption failed, use original for search (won't match encrypted content)
+                  contentMap.set(share.id, share.content);
+                }
+              } else {
+                // No key available, can't decrypt - won't be searchable
+                contentMap.set(share.id, "");
+              }
+            } else {
+              // Not encrypted, use as-is
+              contentMap.set(share.id, share.content);
+            }
+          }
+        } catch (error) {
+          console.error("Error decrypting content for search:", share.id, error);
+          contentMap.set(share.id, share.content || "");
+        }
+      }
+      setDecryptedContentMap(contentMap);
     };
 
     if (shares.length > 0) {
       decryptShares();
     } else {
       setDecryptedShares([]);
+      setDecryptedContentMap(new Map());
     }
   }, [shares, encryptionKey, isPasswordKey]);
 
@@ -1062,7 +1101,30 @@ export default function Room() {
             transition={{ delay: 0.2 }}
             className="lg:col-span-3 space-y-4"
           >
-            <h2 className="text-xl font-bold mb-4">Content</h2>
+            <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+              <h2 className="text-xl font-bold">Content</h2>
+              {/* Search Input */}
+              <div className="relative w-full sm:w-auto sm:min-w-[250px]">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  type="text"
+                  placeholder="Search text, code, links..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9 pr-9 bg-background/50"
+                />
+                {searchQuery && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="absolute right-1 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0 hover:bg-transparent"
+                    onClick={() => setSearchQuery("")}
+                  >
+                    <X className="w-3 h-3" />
+                  </Button>
+                )}
+              </div>
+            </div>
             
             {decryptedShares.length > 0 ? (
               <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
@@ -1114,17 +1176,54 @@ export default function Room() {
                 </TabsList>
 
                 <TabsContent value={activeTab} className="mt-4">
-                  <div className="space-y-4">
-                    {shares
-                      .filter((share) => {
-                        if (activeTab === "all") return true;
-                        if (activeTab === "files") return share.type === "file";
-                        if (activeTab === "links") return share.type === "url";
-                        if (activeTab === "code") return share.type === "code";
-                        if (activeTab === "text") return share.type === "text";
-                        return true;
-                      })
-                      .map((share) => (
+                  {(() => {
+                    const filteredShares = shares.filter((share) => {
+                      // Filter by tab type
+                      if (activeTab === "files") {
+                        if (share.type !== "file") return false;
+                      } else if (activeTab === "links") {
+                        if (share.type !== "url") return false;
+                      } else if (activeTab === "code") {
+                        if (share.type !== "code") return false;
+                      } else if (activeTab === "text") {
+                        if (share.type !== "text") return false;
+                      }
+
+                      // Filter by search query (only for text, code, and links)
+                      if (searchQuery.trim()) {
+                        const query = searchQuery.trim().toLowerCase();
+                        // Only search in text, code, and link content
+                        if (share.type === "text" || share.type === "code" || share.type === "url") {
+                          const decryptedContent = decryptedContentMap.get(share.id) || "";
+                          return decryptedContent.toLowerCase().includes(query);
+                        }
+                        // For files, don't filter by search (can add file name search later)
+                        if (share.type === "file") {
+                          return true; // Keep files when searching
+                        }
+                        return false;
+                      }
+                      
+                      return true;
+                    });
+
+                    if (filteredShares.length === 0) {
+                      return (
+                        <Card className="glass-card p-12 text-center">
+                          {searchQuery.trim() ? (
+                            <p className="text-muted-foreground">
+                              No content found matching "{searchQuery}"
+                            </p>
+                          ) : (
+                            <p className="text-muted-foreground">No content in this category.</p>
+                          )}
+                        </Card>
+                      );
+                    }
+
+                    return (
+                      <div className="space-y-4">
+                        {filteredShares.map((share) => (
                         <Card key={share.id} className="glass-card p-6 relative group">
                           {room?.permissions === "edit" && (
                             <Button
@@ -1147,7 +1246,9 @@ export default function Room() {
                         />
                         </Card>
                       ))}
-                  </div>
+                      </div>
+                    );
+                  })()}
                 </TabsContent>
               </Tabs>
             ) : (
