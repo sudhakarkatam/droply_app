@@ -46,21 +46,42 @@ export function ShareDisplay({ share, encryptionKey, isPasswordKey, canDelete, o
           }
         } else if (share.content) {
           // Check if content is encrypted
-          if (isEncrypted(share.content) && encryptionKey) {
-            try {
-              const decrypted = await decrypt(share.content, encryptionKey, isPasswordKey);
-              // Check if decryption actually succeeded (result should not be encrypted)
-              if (isEncrypted(decrypted)) {
-                // Decryption failed - result is still encrypted
-                console.error("Decryption failed - result still encrypted");
+          if (isEncrypted(share.content)) {
+            if (!encryptionKey) {
+              // Content is encrypted but no key available
+              console.error("Encrypted content detected but encryptionKey is null", {
+                shareId: share.id,
+                shareType: share.type,
+                contentLength: share.content.length,
+                hasPasswordKey: isPasswordKey
+              });
+              setDecryptedContent("[⚠️ Unable to decrypt content. Please enter the room password.]");
+            } else {
+              try {
+                const decrypted = await decrypt(share.content, encryptionKey, isPasswordKey);
+                // Check if decryption actually succeeded (result should not be encrypted)
+                if (isEncrypted(decrypted)) {
+                  // Decryption failed - result is still encrypted
+                  console.error("Decryption failed - result still encrypted", {
+                    shareId: share.id,
+                    hasEncryptionKey: !!encryptionKey,
+                    isPasswordKey: isPasswordKey,
+                    encryptedLength: share.content.length,
+                    decryptedLength: decrypted.length
+                  });
+                  setDecryptedContent("[⚠️ Unable to decrypt content. Please check your password or refresh the page.]");
+                } else {
+                  setDecryptedContent(decrypted);
+                }
+              } catch (error) {
+                console.error("Failed to decrypt content:", error, {
+                  shareId: share.id,
+                  hasEncryptionKey: !!encryptionKey,
+                  isPasswordKey: isPasswordKey
+                });
+                // If decryption fails, show error message instead of encrypted key
                 setDecryptedContent("[⚠️ Unable to decrypt content. Please check your password or refresh the page.]");
-              } else {
-                setDecryptedContent(decrypted);
               }
-            } catch (error) {
-              console.error("Failed to decrypt content:", error);
-              // If decryption fails, show error message instead of encrypted key
-              setDecryptedContent("[⚠️ Unable to decrypt content. Please check your password or refresh the page.]");
             }
           } else {
             // Not encrypted, show as-is

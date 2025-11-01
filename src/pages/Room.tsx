@@ -97,9 +97,9 @@ export default function Room() {
         return;
       }
 
-      // Check if user is creator
+      // Check if user is creator (by creator_token)
       const storedCreatorToken = localStorage.getItem(`room_creator_${id}`);
-      setIsCreator(storedCreatorToken === roomData.creator_token);
+      const isOriginalCreator = storedCreatorToken === roomData.creator_token;
 
       // Check password protection - always ask for password when entering room
       // SessionStorage is cleared on navigation away, so new visits always require password
@@ -116,6 +116,8 @@ export default function Room() {
             setIsPasswordVerified(true);
             setEncryptionKey(trimmedPassword);
             setIsPasswordKey(true);
+            // For password-protected rooms: anyone with the password gets admin access
+            setIsCreator(true);
           } else {
             // Invalid password, clear it and ask again
             sessionStorage.removeItem(`room_password_${id}`);
@@ -131,6 +133,23 @@ export default function Room() {
         }
       } else {
         setIsPasswordVerified(true);
+        
+        // Determine creator status:
+        // - For password-protected rooms: if password was verified (skipPasswordCheck = true), grant admin access
+        // - For non-password rooms: only original creator is admin
+        if (roomData.password && skipPasswordCheck) {
+          // Password was already verified in this session - grant admin access
+          // Ensure encryptionKey is set from sessionStorage if not already set
+          const sessionPassword = sessionStorage.getItem(`room_password_${id}`);
+          if (sessionPassword && !encryptionKey) {
+            setEncryptionKey(sessionPassword.trim());
+            setIsPasswordKey(true);
+          }
+          setIsCreator(true);
+        } else {
+          // Non-password room - only original creator is admin
+          setIsCreator(isOriginalCreator);
+        }
       }
 
       // Load shares
@@ -202,6 +221,8 @@ export default function Room() {
       setIsPasswordVerified(true);
       setEncryptionKey(trimmedPassword); // Use original password for encryption
       setIsPasswordKey(true);
+      // For password-protected rooms: anyone with the password gets admin access
+      setIsCreator(true);
       setShowPasswordDialog(false);
       loadRoom(true);
       toast.success("Access granted!");
