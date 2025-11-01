@@ -23,16 +23,54 @@ export function ShareDisplay({ share, encryptionKey, isPasswordKey, canDelete, o
     const decryptData = async () => {
       try {
         if (share.type === "file" && share.file_name) {
-          // Decrypt file name
-          const decrypted = await decrypt(share.file_name, encryptionKey, isPasswordKey);
-          setDecryptedContent(decrypted);
+          // Check if file name is encrypted
+          if (isEncrypted(share.file_name) && encryptionKey) {
+            try {
+              const decrypted = await decrypt(share.file_name, encryptionKey, isPasswordKey);
+              // Check if decryption actually succeeded
+              if (isEncrypted(decrypted)) {
+                // Decryption failed - result is still encrypted
+                console.error("Decryption failed for file name - result still encrypted");
+                setDecryptedContent(share.file_name); // Show original encrypted name as fallback
+              } else {
+                setDecryptedContent(decrypted);
+              }
+            } catch (error) {
+              console.error("Failed to decrypt file name:", error);
+              // If decryption fails, show original (might be unencrypted or wrong key)
+              setDecryptedContent(share.file_name);
+            }
+          } else {
+            // Not encrypted, show as-is
+            setDecryptedContent(share.file_name);
+          }
         } else if (share.content) {
-          // Decrypt text/url content
-          const decrypted = await decrypt(share.content, encryptionKey, isPasswordKey);
-          setDecryptedContent(decrypted);
+          // Check if content is encrypted
+          if (isEncrypted(share.content) && encryptionKey) {
+            try {
+              const decrypted = await decrypt(share.content, encryptionKey, isPasswordKey);
+              // Check if decryption actually succeeded (result should not be encrypted)
+              if (isEncrypted(decrypted)) {
+                // Decryption failed - result is still encrypted
+                console.error("Decryption failed - result still encrypted");
+                setDecryptedContent("[⚠️ Unable to decrypt content. Please check your password or refresh the page.]");
+              } else {
+                setDecryptedContent(decrypted);
+              }
+            } catch (error) {
+              console.error("Failed to decrypt content:", error);
+              // If decryption fails, show error message instead of encrypted key
+              setDecryptedContent("[⚠️ Unable to decrypt content. Please check your password or refresh the page.]");
+            }
+          } else {
+            // Not encrypted, show as-is
+            setDecryptedContent(share.content);
+          }
+        } else {
+          setDecryptedContent("");
         }
       } catch (error) {
-        console.error("Failed to decrypt:", error);
+        console.error("Unexpected error in decryptData:", error);
         setDecryptedContent(share.content || share.file_name || "");
       } finally {
         setIsDecrypting(false);

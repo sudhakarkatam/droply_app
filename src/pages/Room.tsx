@@ -44,14 +44,14 @@ export default function Room() {
       return;
     }
 
-    // Extract encryption key from URL fragment
+    // Extract encryption key from URL fragment (for non-password rooms)
     const fragment = location.hash.substring(1);
     if (fragment) {
       setEncryptionKey(fragment);
-      localStorage.setItem(`room_key_${id}`, fragment);
+      sessionStorage.setItem(`room_key_${id}`, fragment);
     } else {
-      // Try to load from localStorage
-      const storedKey = localStorage.getItem(`room_key_${id}`);
+      // Try to load from sessionStorage (not localStorage)
+      const storedKey = sessionStorage.getItem(`room_key_${id}`);
       if (storedKey) {
         setEncryptionKey(storedKey);
       }
@@ -59,6 +59,14 @@ export default function Room() {
 
     loadRoom();
     subscribeToShares();
+
+    // Cleanup: Clear password from sessionStorage when leaving room (navigating away)
+    // This ensures password is asked every time user enters the room after exiting
+    return () => {
+      if (id) {
+        sessionStorage.removeItem(`room_password_${id}`);
+      }
+    };
   }, [id]);
 
   const loadRoom = async (skipPasswordCheck = false) => {
@@ -93,25 +101,30 @@ export default function Room() {
       const storedCreatorToken = localStorage.getItem(`room_creator_${id}`);
       setIsCreator(storedCreatorToken === roomData.creator_token);
 
-      // Check password protection
+      // Check password protection - always ask for password when entering room
+      // SessionStorage is cleared on navigation away, so new visits always require password
+      // Only skip if already verified in current component session (skipPasswordCheck = true)
       if (roomData.password && !skipPasswordCheck) {
-        // Check if password is stored in localStorage
-        const storedPassword = localStorage.getItem(`room_password_${id}`);
-        if (storedPassword) {
-          // Trim stored password to match how it was stored during creation
-          const trimmedPassword = storedPassword.trim();
-          // Hash the stored password and compare with database hash
+        // Check sessionStorage for same-tab refresh scenario only
+        // If navigating away and back, sessionStorage was cleared by cleanup
+        const sessionPassword = sessionStorage.getItem(`room_password_${id}`);
+        if (sessionPassword) {
+          // Same session refresh - verify the stored password
+          const trimmedPassword = sessionPassword.trim();
           const passwordHash = await hashPassword(trimmedPassword);
           if (passwordHash === roomData.password) {
             setIsPasswordVerified(true);
-            setEncryptionKey(trimmedPassword); // Use original password for encryption
+            setEncryptionKey(trimmedPassword);
             setIsPasswordKey(true);
           } else {
+            // Invalid password, clear it and ask again
+            sessionStorage.removeItem(`room_password_${id}`);
             setShowPasswordDialog(true);
             setLoading(false);
             return;
           }
         } else {
+          // New visit or navigated away - always ask for password
           setShowPasswordDialog(true);
           setLoading(false);
           return;
@@ -183,7 +196,9 @@ export default function Room() {
     // Hash the input password and compare with stored hash
     const passwordHash = await hashPassword(trimmedPassword);
     if (passwordHash === room.password) {
-      localStorage.setItem(`room_password_${id}`, trimmedPassword);
+      // Store password in sessionStorage (clears when tab closes) for current session only
+      // Don't store in localStorage to force re-entry on new visits
+      sessionStorage.setItem(`room_password_${id}`, trimmedPassword);
       setIsPasswordVerified(true);
       setEncryptionKey(trimmedPassword); // Use original password for encryption
       setIsPasswordKey(true);

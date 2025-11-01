@@ -109,13 +109,12 @@ export function CreateRoomForm() {
         throw error;
       }
 
-      // Store room access data in localStorage
-      if (password.trim()) {
-        localStorage.setItem(`room_password_${finalRoomName}`, password.trim());
-      }
+      // Store room access data in localStorage (creator token persists)
+      // Password stored in sessionStorage in Room component after verification
       localStorage.setItem(`room_creator_${finalRoomName}`, creatorToken);
       if (encryptionKey) {
-        localStorage.setItem(`room_key_${finalRoomName}`, encryptionKey);
+        // For non-password rooms, store key in sessionStorage (clears on tab close)
+        sessionStorage.setItem(`room_key_${finalRoomName}`, encryptionKey);
       }
 
       toast.success("Room created!");
