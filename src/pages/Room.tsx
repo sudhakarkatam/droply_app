@@ -2,11 +2,12 @@ import { useEffect, useState, useMemo } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { motion } from "framer-motion";
-import { Upload, Link2, FileText, Clock, Copy, CheckCircle2, Trash2, Lock, Code, File, Eye, Edit2 } from "lucide-react";
+import { Upload, Link2, FileText, Clock, Copy, CheckCircle2, Trash2, Lock, Code, File } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
@@ -32,29 +33,15 @@ export default function Room() {
   const [encryptionKey, setEncryptionKey] = useState<string | null>(null);
   const [isPasswordKey, setIsPasswordKey] = useState(false);
   const [isCreator, setIsCreator] = useState(false);
-  const [hasEditPermission, setHasEditPermission] = useState(false);
-  const [editToken, setEditToken] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<string>("all");
+  const [shareContentTab, setShareContentTab] = useState<string>("text");
   const [decryptedShares, setDecryptedShares] = useState<any[]>([]);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (!id) {
       navigate("/");
       return;
-    }
-
-    // Extract edit token from URL query parameter
-    const searchParams = new URLSearchParams(location.search);
-    const urlEditToken = searchParams.get("edit");
-    if (urlEditToken) {
-      setEditToken(urlEditToken);
-      localStorage.setItem(`room_edit_${id}`, urlEditToken);
-    } else {
-      // Try to load from localStorage
-      const storedEditToken = localStorage.getItem(`room_edit_${id}`);
-      if (storedEditToken) {
-        setEditToken(storedEditToken);
-      }
     }
 
     // Extract encryption key from URL fragment
@@ -72,7 +59,7 @@ export default function Room() {
 
     loadRoom();
     subscribeToShares();
-  }, [id, location.search, location.hash]);
+  }, [id]);
 
   const loadRoom = async (skipPasswordCheck = false) => {
     try {
@@ -105,22 +92,6 @@ export default function Room() {
       // Check if user is creator
       const storedCreatorToken = localStorage.getItem(`room_creator_${id}`);
       setIsCreator(storedCreatorToken === roomData.creator_token);
-
-      // Check edit permission via edit_token
-      // First check URL parameter, then localStorage, then state
-      const searchParams = new URLSearchParams(location.search);
-      const urlEditToken = searchParams.get("edit");
-      const storedEditToken = localStorage.getItem(`room_edit_${id}`);
-      const currentEditToken = urlEditToken || storedEditToken || editToken;
-      
-      if (currentEditToken && roomData.edit_token && currentEditToken === roomData.edit_token) {
-        setHasEditPermission(true);
-      } else if (roomData.permissions === "edit") {
-        // Fallback: if room permissions allow editing, grant permission (backwards compatibility)
-        setHasEditPermission(true);
-      } else {
-        setHasEditPermission(false);
-      }
 
       // Check password protection
       if (roomData.password && !skipPasswordCheck) {
@@ -253,7 +224,7 @@ export default function Room() {
   const handleShareText = async () => {
     if (!text.trim()) return;
 
-    if (!hasEditPermission && room?.permissions === "view") {
+    if (room?.permissions === "view") {
       toast.error("This room is view-only");
       return;
     }
@@ -301,7 +272,7 @@ export default function Room() {
   const handleShareUrl = async () => {
     if (!url.trim()) return;
 
-    if (!hasEditPermission && room?.permissions === "view") {
+    if (room?.permissions === "view") {
       toast.error("This room is view-only");
       return;
     }
@@ -344,7 +315,7 @@ export default function Room() {
   };
 
   const handleShareCode = async (code: string, language: string) => {
-    if (!hasEditPermission && room?.permissions === "view") {
+    if (room?.permissions === "view") {
       toast.error("This room is view-only");
       return;
     }
@@ -385,26 +356,16 @@ export default function Room() {
     }
   };
 
-  const copyViewLink = () => {
-    const baseUrl = window.location.origin;
-    const viewLink = `${baseUrl}/room/${id}`;
-    navigator.clipboard.writeText(viewLink);
-    toast.success("View link copied!");
-  };
-
-  const copyEditLink = () => {
-    if (!room?.edit_token) {
-      toast.error("Edit token not available");
-      return;
-    }
-    const baseUrl = window.location.origin;
-    const editLink = `${baseUrl}/room/${id}?edit=${room.edit_token}`;
-    navigator.clipboard.writeText(editLink);
-    toast.success("Edit link copied!");
+  const copyRoomLink = () => {
+    const link = window.location.href;
+    navigator.clipboard.writeText(link);
+    setCopied(true);
+    toast.success("Link copied!");
+    setTimeout(() => setCopied(false), 2000);
   };
 
   const deleteShare = async (shareId: string) => {
-    if (!hasEditPermission && room?.permissions === "view") {
+    if (room?.permissions === "view") {
       toast.error("This room is view-only");
       return;
     }
@@ -531,147 +492,130 @@ export default function Room() {
           <h1 className="text-4xl font-bold text-gradient">Droply</h1>
           <p className="text-muted-foreground">Share anything, instantly</p>
 
-          <Card className="glass-card p-4 space-y-4">
-            <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
-              <div className="flex items-center gap-2">
-                <Clock className="w-4 h-4" />
-                {room?.expires_at ? (
-                  <span>Expires {formatDistanceToNow(new Date(room.expires_at), { addSuffix: true })}</span>
-                ) : (
-                  <span>Never expires</span>
-                )}
-              </div>
-            </div>
-            
-            {/* Link Manager */}
-            <div className="space-y-2 pt-2 border-t border-border">
-              <div className="text-sm font-medium mb-2">Room Links</div>
-              <div className="flex flex-col sm:flex-row gap-2">
-                <div className="flex-1 flex items-center gap-2 p-2 bg-background/50 rounded-md">
-                  <Eye className="w-4 h-4 text-muted-foreground" />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-xs text-muted-foreground">View Link (Read-only)</div>
-                    <div className="text-xs truncate">{window.location.origin}/room/{id}</div>
-                  </div>
-                  <Button
-                    onClick={copyViewLink}
-                    variant="ghost"
-                    size="sm"
-                    className="shrink-0"
-                  >
-                    <Copy className="w-3 h-3" />
-                  </Button>
-                </div>
-                {room?.edit_token && (
-                  <div className="flex-1 flex items-center gap-2 p-2 bg-primary/10 rounded-md border border-primary/20">
-                    <Edit2 className="w-4 h-4 text-primary" />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs text-primary font-medium">Edit Link (Full Access)</div>
-                      <div className="text-xs truncate">{window.location.origin}/room/{id}?edit={room.edit_token.substring(0, 8)}...</div>
-                    </div>
-                    <Button
-                      onClick={copyEditLink}
-                      variant="ghost"
-                      size="sm"
-                      className="shrink-0"
-                    >
-                      <Copy className="w-3 h-3" />
-                    </Button>
-                  </div>
-                )}
-              </div>
-              {room?.edit_token && (
-                <p className="text-xs text-muted-foreground">
-                  ⚠️ Keep the edit link private - anyone with it can modify content
-                </p>
+          <Card className="glass-card p-4 flex items-center justify-center gap-4 flex-wrap">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Clock className="w-4 h-4" />
+              {room?.expires_at ? (
+                <span>Expires {formatDistanceToNow(new Date(room.expires_at), { addSuffix: true })}</span>
+              ) : (
+                <span>Never expires</span>
               )}
             </div>
           </Card>
-
-          <RoomSettings 
-            room={room} 
-            isPasswordProtected={!!room?.password}
-            isEncrypted={!!encryptionKey}
-            isCreator={isCreator}
-            onSettingsUpdate={updateRoomSettings}
-          />
         </motion.div>
 
-        {/* Split View Layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Left Side: Upload Sections */}
+        {/* Split View Layout - Larger content area */}
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+          {/* Left Side: Share Content with Tabs + Settings */}
           <motion.div
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.1 }}
-            className="space-y-4"
+            className="lg:col-span-2 space-y-4"
           >
+            {/* Actions: Copy Link and Edit Settings */}
+            <div className="flex gap-2 flex-wrap">
+              <Button onClick={copyRoomLink} variant="outline" size="sm" className="gap-2 flex-1 sm:flex-initial">
+                {copied ? <CheckCircle2 className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                {copied ? "Copied!" : "Copy Link"}
+              </Button>
+              <div className="flex-1 sm:flex-initial">
+                <RoomSettings 
+                  room={room} 
+                  isPasswordProtected={!!room?.password}
+                  isEncrypted={!!encryptionKey}
+                  isCreator={isCreator}
+                  onSettingsUpdate={updateRoomSettings}
+                />
+              </div>
+            </div>
+
             <h2 className="text-xl font-bold mb-4">Share Content</h2>
             
-            <Card className="glass-card p-6 space-y-4">
-              <h3 className="text-lg font-semibold flex items-center gap-2">
-                <Upload className="w-5 h-5 text-primary" />
-                Upload File
-              </h3>
-                <FileUpload 
-                roomId={id!} 
-                onUploadComplete={loadRoom}
-                encryptionKey={encryptionKey}
-                isPasswordKey={isPasswordKey}
-                disabled={!hasEditPermission && room?.permissions === "view"}
-              />
-            </Card>
+            {/* Share Content Tabs */}
+            <Card className="glass-card p-6">
+              <Tabs value={shareContentTab} onValueChange={setShareContentTab} className="w-full">
+                <TabsList className="grid w-full grid-cols-4 bg-background/50 mb-4">
+                  <TabsTrigger value="text" className="gap-2">
+                    <FileText className="w-4 h-4" />
+                    <span className="hidden sm:inline">Text</span>
+                  </TabsTrigger>
+                  <TabsTrigger value="file" className="gap-2">
+                    <Upload className="w-4 h-4" />
+                    <span className="hidden sm:inline">File</span>
+                  </TabsTrigger>
+                  <TabsTrigger value="code" className="gap-2">
+                    <Code className="w-4 h-4" />
+                    <span className="hidden sm:inline">Code</span>
+                  </TabsTrigger>
+                  <TabsTrigger value="link" className="gap-2">
+                    <Link2 className="w-4 h-4" />
+                    <span className="hidden sm:inline">Link</span>
+                  </TabsTrigger>
+                </TabsList>
 
-            <Card className="glass-card p-6 space-y-4">
-              <h3 className="text-lg font-semibold flex items-center gap-2">
-                <Code className="w-5 h-5 text-primary" />
-                Share Code Snippet
-              </h3>
-              <CodeSnippetUpload 
-              onShare={handleShareCode}
-              disabled={!hasEditPermission && room?.permissions === "view"}
-            />
-            </Card>
+                <TabsContent value="text" className="space-y-4">
+                  <div>
+                    <Label className="mb-2 block">Share Text</Label>
+                    <Textarea
+                      value={text}
+                      onChange={(e) => setText(e.target.value)}
+                      placeholder="Paste your text here..."
+                      className="min-h-32 bg-background/50"
+                    />
+                  </div>
+                  <Button onClick={handleShareText} className="w-full gradient-warm" disabled={room?.permissions === "view"}>
+                    Share Text
+                  </Button>
+                </TabsContent>
 
-            <Card className="glass-card p-6 space-y-4">
-              <h3 className="text-lg font-semibold flex items-center gap-2">
-                <FileText className="w-5 h-5 text-primary" />
-                Share Text
-              </h3>
-              <Textarea
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                placeholder="Paste your text here..."
-                className="min-h-32 bg-background/50"
-              />
-              <Button onClick={handleShareText} className="w-full gradient-warm">
-                Share Text
-              </Button>
-            </Card>
+                <TabsContent value="file" className="space-y-4">
+                  <div>
+                    <Label className="mb-2 block">Upload File</Label>
+                    <FileUpload 
+                      roomId={id!} 
+                      onUploadComplete={loadRoom}
+                      encryptionKey={encryptionKey}
+                      isPasswordKey={isPasswordKey}
+                      disabled={room?.permissions === "view"}
+                    />
+                  </div>
+                </TabsContent>
 
-            <Card className="glass-card p-6 space-y-4">
-              <h3 className="text-lg font-semibold flex items-center gap-2">
-                <Link2 className="w-5 h-5 text-primary" />
-                Share URL
-              </h3>
-              <Input
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder="https://example.com"
-                className="bg-background/50"
-              />
-              <Button onClick={handleShareUrl} className="w-full gradient-warm">
-                Share URL
-              </Button>
+                <TabsContent value="code" className="space-y-4">
+                  <div>
+                    <Label className="mb-2 block">Share Code Snippet</Label>
+                    <CodeSnippetUpload 
+                      onShare={handleShareCode}
+                      disabled={room?.permissions === "view"}
+                    />
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="link" className="space-y-4">
+                  <div>
+                    <Label className="mb-2 block">Share URL</Label>
+                    <Input
+                      value={url}
+                      onChange={(e) => setUrl(e.target.value)}
+                      placeholder="https://example.com"
+                      className="bg-background/50"
+                    />
+                  </div>
+                  <Button onClick={handleShareUrl} className="w-full gradient-warm" disabled={room?.permissions === "view"}>
+                    Share URL
+                  </Button>
+                </TabsContent>
+              </Tabs>
             </Card>
           </motion.div>
 
-          {/* Right Side: Content Display with Tabs */}
+          {/* Right Side: Content Display with Tabs - Larger area */}
           <motion.div
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.2 }}
-            className="space-y-4"
+            className="lg:col-span-3 space-y-4"
           >
             <h2 className="text-xl font-bold mb-4">Content</h2>
             
@@ -725,7 +669,7 @@ export default function Room() {
                 </TabsList>
 
                 <TabsContent value={activeTab} className="mt-4">
-                  <div className="space-y-4 max-h-[600px] overflow-y-auto">
+                  <div className="space-y-4">
                     {shares
                       .filter((share) => {
                         if (activeTab === "all") return true;
@@ -738,7 +682,7 @@ export default function Room() {
                       })
                       .map((share) => (
                         <Card key={share.id} className="glass-card p-6 relative group">
-                          {(hasEditPermission || room?.permissions === "edit") && (
+                          {room?.permissions === "edit" && (
                             <Button
                               onClick={() => deleteShare(share.id)}
                               variant="ghost"
@@ -752,7 +696,7 @@ export default function Room() {
                           share={share}
                           encryptionKey={encryptionKey}
                           isPasswordKey={isPasswordKey}
-                          canDelete={hasEditPermission || room?.permissions === "edit"}
+                          canDelete={room?.permissions === "edit"}
                           onDelete={() => deleteShare(share.id)}
                         />
                         </Card>

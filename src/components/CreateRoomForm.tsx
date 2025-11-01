@@ -93,9 +93,8 @@ export function CreateRoomForm() {
       // Hash password before storing (if provided)
       const passwordHash = password.trim() ? await hashPassword(password.trim()) : null;
 
-      // Generate tokens for room ownership
+      // Generate creator token for room ownership
       const creatorToken = crypto.randomUUID();
-      const editToken = crypto.randomUUID();
 
       // Create room with settings
       const { error } = await supabase.from("rooms").insert({
@@ -104,7 +103,6 @@ export function CreateRoomForm() {
         permissions,
         expires_at: expiresAt,
         creator_token: creatorToken,
-        edit_token: editToken,
       });
 
       if (error) {
@@ -116,18 +114,16 @@ export function CreateRoomForm() {
         localStorage.setItem(`room_password_${finalRoomName}`, password.trim());
       }
       localStorage.setItem(`room_creator_${finalRoomName}`, creatorToken);
-      localStorage.setItem(`room_edit_${finalRoomName}`, editToken);
       if (encryptionKey) {
         localStorage.setItem(`room_key_${finalRoomName}`, encryptionKey);
       }
 
       toast.success("Room created!");
       setTimeout(() => {
-        // Navigate to edit link with edit token
-        const baseUrl = `/room/${finalRoomName}?edit=${editToken}`;
+        // Include encryption key in URL fragment for non-password rooms
         const url = encryptionKey 
-          ? `${baseUrl}#${encryptionKey}`
-          : baseUrl;
+          ? `/room/${finalRoomName}#${encryptionKey}`
+          : `/room/${finalRoomName}`;
         navigate(url);
       }, 300);
     } catch (error) {
