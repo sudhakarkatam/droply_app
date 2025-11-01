@@ -533,30 +533,46 @@ export default function Room() {
                   
                   // Handle content (text, code, URLs)
                   if (share.content && isEncrypted(share.content)) {
-                    // Decrypt content with current password
-                    const decryptedContent = await decrypt(share.content, currentPassword.trim(), true);
-                    // Verify decryption succeeded (result should not be encrypted)
-                    if (!isEncrypted(decryptedContent)) {
-                      updateData.content = decryptedContent;
-                    } else {
-                      console.error("Decryption failed for share content", share.id);
+                    try {
+                      // Decrypt content with current password
+                      const decryptedContent = await decrypt(share.content, currentPassword.trim(), true);
+                      // Verify decryption succeeded (result should not be encrypted)
+                      if (!isEncrypted(decryptedContent)) {
+                        updateData.content = decryptedContent;
+                      } else {
+                        console.error("Decryption failed for share content - result still encrypted", share.id);
+                        // Try to continue with other shares
+                        return null;
+                      }
+                    } catch (decryptError) {
+                      console.error("Error decrypting share content:", share.id, decryptError);
+                      // If decryption fails, we can't convert to unencrypted - skip this share
                       return null;
                     }
+                  } else if (share.content) {
+                    // Content is already unencrypted, no need to update
                   }
 
                   // Handle file names
                   if (share.type === "file" && share.file_name && isEncrypted(share.file_name)) {
-                    // Decrypt file name with current password
-                    const decryptedFileName = await decrypt(share.file_name, currentPassword.trim(), true);
-                    if (!isEncrypted(decryptedFileName)) {
-                      updateData.file_name = decryptedFileName;
-                    } else {
-                      console.error("Decryption failed for share file name", share.id);
+                    try {
+                      // Decrypt file name with current password
+                      const decryptedFileName = await decrypt(share.file_name, currentPassword.trim(), true);
+                      if (!isEncrypted(decryptedFileName)) {
+                        updateData.file_name = decryptedFileName;
+                      } else {
+                        console.error("Decryption failed for share file name - result still encrypted", share.id);
+                        // Continue even if file name decryption fails
+                      }
+                    } catch (decryptError) {
+                      console.error("Error decrypting share file name:", share.id, decryptError);
                       // Continue even if file name decryption fails
                     }
+                  } else if (share.type === "file" && share.file_name) {
+                    // File name is already unencrypted, no need to update
                   }
 
-                  // Only update if we have decrypted content
+                  // Only update if we have decrypted content to save
                   if (Object.keys(updateData).length > 0) {
                     const { error: updateError } = await supabase
                       .from("shares")
@@ -571,9 +587,10 @@ export default function Room() {
                     return share.id;
                   }
                   
-                  return null;
+                  // Share had no encrypted content to decrypt, or all decryption succeeded but no updates needed
+                  return share.id; // Count as success even if no update needed
                 } catch (error) {
-                  console.error("Error decrypting share:", share.id, error);
+                  console.error("Unexpected error decrypting share:", share.id, error);
                   return null;
                 }
               });

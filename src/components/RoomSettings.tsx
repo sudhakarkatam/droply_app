@@ -130,14 +130,9 @@ export function RoomSettings({
 
       await onSettingsUpdate(updates);
       
-      // Show warnings for password changes
-      if (updates.password !== undefined) {
-        if (updates.password === null) {
-          toast.warning("Password removed. Existing encrypted content still requires the old password to decrypt.");
-        } else if (isPasswordProtected) {
-          toast.warning("Password changed. Old encrypted content still requires the old password.");
-        }
-      }
+      // Note: Password removal automatically decrypts all existing content
+      // Password change automatically re-encrypts all existing content
+      // No warnings needed as this is handled automatically
 
       setIsEditing(false);
       setNewPassword("");
@@ -243,7 +238,7 @@ export function RoomSettings({
             )}
             <p className="text-xs text-muted-foreground">
               {isPasswordProtected 
-                ? "Leave empty to remove password. Existing encrypted content will still require the old password."
+                ? "Leave empty to remove password. All existing encrypted content will be automatically decrypted."
                 : "Password enables end-to-end encryption for your room"}
             </p>
           </div>
