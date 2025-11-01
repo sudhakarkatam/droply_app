@@ -245,6 +245,54 @@ USING (false)
 WITH CHECK (false);
 
 -- ============================================
+-- STEP 6B: Create Delete Room Function
+-- ============================================
+
+CREATE OR REPLACE FUNCTION public.delete_room(
+    p_room_id TEXT,
+    p_creator_token TEXT
+)
+RETURNS JSON
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    v_is_creator BOOLEAN;
+BEGIN
+    -- Check if the room exists and the creator token matches
+    SELECT EXISTS (
+        SELECT 1
+        FROM public.rooms
+        WHERE id = p_room_id AND creator_token = p_creator_token
+    ) INTO v_is_creator;
+
+    IF NOT v_is_creator THEN
+        RETURN json_build_object('success', FALSE, 'error', 'Unauthorized or room not found.');
+    END IF;
+
+    -- Delete associated shares first (CASCADE should handle this, but being explicit)
+    DELETE FROM public.shares
+    WHERE room_id = p_room_id;
+
+    -- Delete files from storage (if any) - Note: This requires additional logic in application
+    -- For now, files remain in storage but orphaned (can be cleaned up manually)
+
+    -- Then delete the room
+    DELETE FROM public.rooms
+    WHERE id = p_room_id;
+
+    RETURN json_build_object('success', TRUE, 'message', 'Room and all shares deleted successfully.');
+
+EXCEPTION
+    WHEN OTHERS THEN
+        RETURN json_build_object('success', FALSE, 'error', SQLERRM);
+END;
+$$;
+
+-- Grant execute permissions
+GRANT EXECUTE ON FUNCTION public.delete_room(TEXT, TEXT) TO anon, authenticated;
+
+-- ============================================
 -- STEP 7: Create Storage Policies
 -- ============================================
 

@@ -18,6 +18,7 @@ import { PasswordDialog } from "@/components/PasswordDialog";
 import { CodeSnippetUpload } from "@/components/CodeSnippetUpload";
 import { RoomSettings } from "@/components/RoomSettings";
 import { encrypt, hashPassword, generateKey, verifyEncryption } from "@/lib/crypto";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 
 export default function Room() {
   const { id } = useParams();
@@ -448,15 +449,18 @@ export default function Room() {
         rpcParams.p_password = null;
         // Generate new encryption key for future content
         const newKey = await generateKey();
-        localStorage.setItem(`room_key_${id}`, newKey);
+        sessionStorage.setItem(`room_key_${id}`, newKey);
         setEncryptionKey(newKey);
         setIsPasswordKey(false);
+        sessionStorage.removeItem(`room_password_${id}`);
         localStorage.removeItem(`room_password_${id}`);
       } else {
         // Setting or changing password - hash it
         const trimmedPassword = updates.password.trim();
         rpcParams.p_password = await hashPassword(trimmedPassword);
-        // Store original trimmed password for encryption
+        // Store original trimmed password for encryption in both localStorage and sessionStorage
+        // sessionStorage ensures it persists during the session for decryption
+        sessionStorage.setItem(`room_password_${id}`, trimmedPassword);
         localStorage.setItem(`room_password_${id}`, trimmedPassword);
         setEncryptionKey(trimmedPassword);
         setIsPasswordKey(true);
@@ -490,8 +494,66 @@ export default function Room() {
       throw new Error(data.error || "Update failed");
     }
 
-    // Reload room data
+    // Reload room data after password change to ensure encryptionKey is properly set
     await loadRoom(true);
+    
+    // After password change, ensure encryptionKey is available for decryption
+    if (updates.password !== undefined && updates.password !== null) {
+      const trimmedPassword = updates.password.trim();
+      // Double-check encryptionKey is set (loadRoom should handle this, but ensure it)
+      if (!encryptionKey || encryptionKey !== trimmedPassword) {
+        setEncryptionKey(trimmedPassword);
+        setIsPasswordKey(true);
+      }
+    }
+  };
+
+  const deleteRoom = async () => {
+    if (!isCreator) {
+      toast.error("Only room creator can delete the room");
+      return;
+    }
+
+    // Get creator token from localStorage
+    const creatorToken = localStorage.getItem(`room_creator_${id}`);
+    if (!creatorToken) {
+      toast.error("Creator token not found. Cannot delete room.");
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase.rpc('delete_room', {
+        p_room_id: id,
+        p_creator_token: creatorToken
+      });
+
+      if (error) {
+        console.error("Error deleting room:", error);
+        toast.error(error.message || "Failed to delete room");
+        return;
+      }
+
+      // Check if function returned success
+      if (data && !data.success) {
+        toast.error(data.error || "Failed to delete room");
+        return;
+      }
+
+      toast.success("Room deleted successfully");
+      
+      // Clean up local storage
+      localStorage.removeItem(`room_creator_${id}`);
+      localStorage.removeItem(`room_password_${id}`);
+      localStorage.removeItem(`room_key_${id}`);
+      sessionStorage.removeItem(`room_password_${id}`);
+      sessionStorage.removeItem(`room_key_${id}`);
+
+      // Navigate to home
+      navigate("/");
+    } catch (error) {
+      console.error("Error deleting room:", error);
+      toast.error("Failed to delete room");
+    }
   };
 
   if (loading) {
@@ -564,6 +626,7 @@ export default function Room() {
                   isEncrypted={!!encryptionKey}
                   isCreator={isCreator}
                   onSettingsUpdate={updateRoomSettings}
+                  onDeleteRoom={deleteRoom}
                 />
               </div>
             </div>

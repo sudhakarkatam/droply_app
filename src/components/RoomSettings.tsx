@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Settings, Eye, Edit, Shield, Key, ChevronDown, ChevronUp, Lock, Clock } from "lucide-react";
+import { Settings, Eye, Edit, Shield, Key, ChevronDown, ChevronUp, Lock, Clock, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { CustomExpiryPicker } from "@/components/CustomExpiryPicker";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 
 interface RoomSettingsProps {
   room: any;
@@ -19,6 +20,7 @@ interface RoomSettingsProps {
     permissions?: "view" | "edit";
     expiry?: string | null;
   }) => Promise<void>;
+  onDeleteRoom?: () => Promise<void>;
 }
 
 export function RoomSettings({ 
@@ -26,7 +28,8 @@ export function RoomSettings({
   isPasswordProtected, 
   isEncrypted, 
   isCreator,
-  onSettingsUpdate 
+  onSettingsUpdate,
+  onDeleteRoom 
 }: RoomSettingsProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [newPassword, setNewPassword] = useState("");
@@ -294,6 +297,44 @@ export function RoomSettings({
               Cancel
             </Button>
           </div>
+
+          {/* Delete Room Section */}
+          {isCreator && onDeleteRoom && (
+            <div className="mt-6 pt-6 border-t border-destructive/20">
+              <Label className="text-destructive mb-2 block">Danger Zone</Label>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    className="w-full gap-2"
+                    disabled={isSaving}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Delete Room Permanently
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete Room?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This action cannot be undone. This will permanently delete the room
+                      and all shared content (text, files, code snippets, and links). All data will be lost.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={onDeleteRoom}
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    >
+                      Delete Room
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
+          )}
         </div>
       )}
     </Card>
