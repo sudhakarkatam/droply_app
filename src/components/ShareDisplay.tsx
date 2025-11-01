@@ -13,9 +13,10 @@ interface ShareDisplayProps {
   isPasswordKey: boolean;
   canDelete: boolean;
   onDelete: () => void;
+  oldEncryptionKeys?: string[]; // Array of old passwords for decrypting old content
 }
 
-export function ShareDisplay({ share, encryptionKey, isPasswordKey, canDelete, onDelete }: ShareDisplayProps) {
+export function ShareDisplay({ share, encryptionKey, isPasswordKey, canDelete, onDelete, oldEncryptionKeys = [] }: ShareDisplayProps) {
   const [decryptedContent, setDecryptedContent] = useState<string>("");
   const [isDecrypting, setIsDecrypting] = useState(true);
 
@@ -24,21 +25,48 @@ export function ShareDisplay({ share, encryptionKey, isPasswordKey, canDelete, o
       try {
         if (share.type === "file" && share.file_name) {
           // Check if file name is encrypted
-          if (isEncrypted(share.file_name) && encryptionKey) {
-            try {
-              const decrypted = await decrypt(share.file_name, encryptionKey, isPasswordKey);
-              // Check if decryption actually succeeded
-              if (isEncrypted(decrypted)) {
-                // Decryption failed - result is still encrypted
-                console.error("Decryption failed for file name - result still encrypted");
-                setDecryptedContent(share.file_name); // Show original encrypted name as fallback
-              } else {
-                setDecryptedContent(decrypted);
+          if (isEncrypted(share.file_name)) {
+            // Try decrypting with all available keys (current + old passwords)
+            const keysToTry: { key: string; isPasswordKey: boolean }[] = [];
+            
+            // Add current encryption key first
+            if (encryptionKey) {
+              keysToTry.push({ key: encryptionKey, isPasswordKey });
+            }
+            
+            // Add old encryption keys
+            oldEncryptionKeys.forEach(oldKey => {
+              if (oldKey && !keysToTry.find(k => k.key === oldKey)) {
+                keysToTry.push({ key: oldKey, isPasswordKey: true });
               }
-            } catch (error) {
-              console.error("Failed to decrypt file name:", error);
-              // If decryption fails, show original (might be unencrypted or wrong key)
+            });
+
+            if (keysToTry.length === 0) {
+              // No keys available, show original
               setDecryptedContent(share.file_name);
+            } else {
+              // Try each key until one works
+              let decrypted: string | null = null;
+              
+              for (const { key, isPasswordKey: keyIsPasswordKey } of keysToTry) {
+                try {
+                  const attempt = await decrypt(share.file_name, key, keyIsPasswordKey);
+                  // Check if decryption actually succeeded
+                  if (!isEncrypted(attempt)) {
+                    decrypted = attempt;
+                    break; // Success! Stop trying other keys
+                  }
+                } catch (error) {
+                  // Continue trying other keys
+                }
+              }
+
+              if (decrypted !== null) {
+                setDecryptedContent(decrypted);
+              } else {
+                // All decryption attempts failed, show original
+                setDecryptedContent(share.file_name);
+              }
             }
           } else {
             // Not encrypted, show as-is
@@ -47,39 +75,57 @@ export function ShareDisplay({ share, encryptionKey, isPasswordKey, canDelete, o
         } else if (share.content) {
           // Check if content is encrypted
           if (isEncrypted(share.content)) {
-            if (!encryptionKey) {
-              // Content is encrypted but no key available
-              console.error("Encrypted content detected but encryptionKey is null", {
+            // Try decrypting with all available keys (current + old passwords)
+            const keysToTry: { key: string; isPasswordKey: boolean }[] = [];
+            
+            // Add current encryption key first
+            if (encryptionKey) {
+              keysToTry.push({ key: encryptionKey, isPasswordKey });
+            }
+            
+            // Add old encryption keys
+            oldEncryptionKeys.forEach(oldKey => {
+              if (oldKey && !keysToTry.find(k => k.key === oldKey)) {
+                keysToTry.push({ key: oldKey, isPasswordKey: true });
+              }
+            });
+
+            if (keysToTry.length === 0) {
+              // No keys available
+              console.error("Encrypted content detected but no encryption keys available", {
                 shareId: share.id,
                 shareType: share.type,
-                contentLength: share.content.length,
-                hasPasswordKey: isPasswordKey
+                contentLength: share.content.length
               });
               setDecryptedContent("[⚠️ Unable to decrypt content. Please enter the room password.]");
             } else {
-              try {
-                const decrypted = await decrypt(share.content, encryptionKey, isPasswordKey);
-                // Check if decryption actually succeeded (result should not be encrypted)
-                if (isEncrypted(decrypted)) {
-                  // Decryption failed - result is still encrypted
-                  console.error("Decryption failed - result still encrypted", {
-                    shareId: share.id,
-                    hasEncryptionKey: !!encryptionKey,
-                    isPasswordKey: isPasswordKey,
-                    encryptedLength: share.content.length,
-                    decryptedLength: decrypted.length
-                  });
-                  setDecryptedContent("[⚠️ Unable to decrypt content. Please check your password or refresh the page.]");
-                } else {
-                  setDecryptedContent(decrypted);
+              // Try each key until one works
+              let decrypted: string | null = null;
+              let lastError: any = null;
+              
+              for (const { key, isPasswordKey: keyIsPasswordKey } of keysToTry) {
+                try {
+                  const attempt = await decrypt(share.content, key, keyIsPasswordKey);
+                  // Check if decryption actually succeeded (result should not be encrypted)
+                  if (!isEncrypted(attempt)) {
+                    decrypted = attempt;
+                    break; // Success! Stop trying other keys
+                  }
+                } catch (error) {
+                  lastError = error;
+                  // Continue trying other keys
                 }
-              } catch (error) {
-                console.error("Failed to decrypt content:", error, {
+              }
+
+              if (decrypted !== null) {
+                setDecryptedContent(decrypted);
+              } else {
+                // All decryption attempts failed
+                console.error("Failed to decrypt content with all available keys", {
                   shareId: share.id,
-                  hasEncryptionKey: !!encryptionKey,
-                  isPasswordKey: isPasswordKey
+                  keysTried: keysToTry.length,
+                  lastError
                 });
-                // If decryption fails, show error message instead of encrypted key
                 setDecryptedContent("[⚠️ Unable to decrypt content. Please check your password or refresh the page.]");
               }
             }
@@ -98,7 +144,7 @@ export function ShareDisplay({ share, encryptionKey, isPasswordKey, canDelete, o
       }
     };
     decryptData();
-  }, [share.content, share.file_name, share.type, encryptionKey, isPasswordKey]);
+  }, [share.content, share.file_name, share.type, encryptionKey, isPasswordKey, oldEncryptionKeys]);
 
   const copyContent = () => {
     navigator.clipboard.writeText(decryptedContent || share.file_url);

@@ -33,6 +33,7 @@ export default function Room() {
   const [isPasswordVerified, setIsPasswordVerified] = useState(false);
   const [encryptionKey, setEncryptionKey] = useState<string | null>(null);
   const [isPasswordKey, setIsPasswordKey] = useState(false);
+  const [oldEncryptionKeys, setOldEncryptionKeys] = useState<string[]>([]); // Store old passwords for decrypting old content
   const [isCreator, setIsCreator] = useState(false);
   const [activeTab, setActiveTab] = useState<string>("all");
   const [shareContentTab, setShareContentTab] = useState<string>("text");
@@ -119,6 +120,16 @@ export default function Room() {
             setIsPasswordKey(true);
             // For password-protected rooms: anyone with the password gets admin access
             setIsCreator(true);
+            // Check if there's an old password stored for decrypting old content
+            const oldPassword = sessionStorage.getItem(`room_password_old_${id}`);
+            if (oldPassword) {
+              setOldEncryptionKeys(prev => {
+                if (!prev.includes(oldPassword)) {
+                  return [...prev, oldPassword];
+                }
+                return prev;
+              });
+            }
           } else {
             // Invalid password, clear it and ask again
             sessionStorage.removeItem(`room_password_${id}`);
@@ -145,6 +156,16 @@ export default function Room() {
           if (sessionPassword && !encryptionKey) {
             setEncryptionKey(sessionPassword.trim());
             setIsPasswordKey(true);
+          }
+          // Also load old passwords if any
+          const oldPassword = sessionStorage.getItem(`room_password_old_${id}`);
+          if (oldPassword) {
+            setOldEncryptionKeys(prev => {
+              if (!prev.includes(oldPassword)) {
+                return [...prev, oldPassword];
+              }
+              return prev;
+            });
           }
           setIsCreator(true);
         } else {
@@ -224,6 +245,16 @@ export default function Room() {
       setIsPasswordKey(true);
       // For password-protected rooms: anyone with the password gets admin access
       setIsCreator(true);
+      // Check if there's an old password stored for decrypting old content
+      const oldPassword = sessionStorage.getItem(`room_password_old_${id}`);
+      if (oldPassword) {
+        setOldEncryptionKeys(prev => {
+          if (!prev.includes(oldPassword)) {
+            return [...prev, oldPassword];
+          }
+          return prev;
+        });
+      }
       setShowPasswordDialog(false);
       loadRoom(true);
       toast.success("Access granted!");
@@ -447,6 +478,13 @@ export default function Room() {
       if (updates.password === null) {
         // Removing password - pass null explicitly
         rpcParams.p_password = null;
+        // Before removing, store old password if it exists (for decrypting old content)
+        const oldPassword = sessionStorage.getItem(`room_password_${id}`);
+        if (oldPassword) {
+          // Store old password in old keys array for decryption
+          setOldEncryptionKeys(prev => [...prev, oldPassword]);
+          sessionStorage.setItem(`room_password_old_${id}`, oldPassword);
+        }
         // Generate new encryption key for future content
         const newKey = await generateKey();
         sessionStorage.setItem(`room_key_${id}`, newKey);
@@ -458,6 +496,20 @@ export default function Room() {
         // Setting or changing password - hash it
         const trimmedPassword = updates.password.trim();
         rpcParams.p_password = await hashPassword(trimmedPassword);
+        
+        // If there was an old password, store it for decrypting old content
+        const oldPassword = sessionStorage.getItem(`room_password_${id}`);
+        if (oldPassword && oldPassword !== trimmedPassword) {
+          // Store old password in old keys array and sessionStorage
+          setOldEncryptionKeys(prev => {
+            if (!prev.includes(oldPassword)) {
+              return [...prev, oldPassword];
+            }
+            return prev;
+          });
+          sessionStorage.setItem(`room_password_old_${id}`, oldPassword);
+        }
+        
         // Store original trimmed password for encryption in both localStorage and sessionStorage
         // sessionStorage ensures it persists during the session for decryption
         sessionStorage.setItem(`room_password_${id}`, trimmedPassword);
@@ -800,6 +852,7 @@ export default function Room() {
                           isPasswordKey={isPasswordKey}
                           canDelete={room?.permissions === "edit"}
                           onDelete={() => deleteShare(share.id)}
+                          oldEncryptionKeys={oldEncryptionKeys}
                         />
                         </Card>
                       ))}
