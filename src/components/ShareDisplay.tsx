@@ -14,9 +14,10 @@ interface ShareDisplayProps {
   canDelete: boolean;
   onDelete: () => void;
   oldEncryptionKeys?: string[]; // Array of old passwords for decrypting old content
+  isPasswordProtected?: boolean; // Whether the room is password-protected
 }
 
-export function ShareDisplay({ share, encryptionKey, isPasswordKey, canDelete, onDelete, oldEncryptionKeys = [] }: ShareDisplayProps) {
+export function ShareDisplay({ share, encryptionKey, isPasswordKey, canDelete, onDelete, oldEncryptionKeys = [], isPasswordProtected = false }: ShareDisplayProps) {
   const [decryptedContent, setDecryptedContent] = useState<string>("");
   const [isDecrypting, setIsDecrypting] = useState(true);
 
@@ -91,20 +92,52 @@ export function ShareDisplay({ share, encryptionKey, isPasswordKey, canDelete, o
             });
 
             if (keysToTry.length === 0) {
-              // No keys available - might be unencrypted or key not loaded yet
-              // Check if content might actually be unencrypted (common pattern check)
-              if (share.content.length < 50 && !share.content.includes(":")) {
-                // Likely unencrypted, show as-is
+              // No keys available - check if content is actually encrypted or just looks like it
+              // For public rooms without passwords, content is stored unencrypted
+              // If isEncrypted returned true but no key is available, it might be a false positive
+              
+              // Check if this looks like unencrypted content that was misidentified
+              const parts = share.content.split(":");
+              const looksLikeEncrypted = parts.length === 2 || parts.length === 3;
+              const allPartsBase64 = looksLikeEncrypted && parts.every(part => 
+                part.length >= 10 && /^[A-Za-z0-9+/=]+$/.test(part)
+              );
+              
+              if (!allPartsBase64 || share.content.length < 30) {
+                // Not actually encrypted - likely unencrypted content, show as-is
+                // This is normal for public rooms without passwords
+                console.warn("Content marked as encrypted but appears unencrypted, showing as-is", {
+                  shareId: share.id,
+                  shareType: share.type,
+                  contentLength: share.content.length,
+                  isPasswordProtected
+                });
+                setDecryptedContent(share.content);
+              } else if (!isPasswordProtected && !encryptionKey) {
+                // Public room with no encryption key - content should be unencrypted
+                // Even if it looks encrypted, for public rooms we should try to show it
+                console.warn("Public room: Content appears encrypted but no key available, treating as unencrypted", {
+                  shareId: share.id
+                });
                 setDecryptedContent(share.content);
               } else {
-                // Encrypted but no key - show helpful message
+                // Actually encrypted but no key available
                 console.error("Encrypted content detected but no encryption keys available", {
                   shareId: share.id,
                   shareType: share.type,
                   contentLength: share.content.length,
-                  hasColon: share.content.includes(":")
+                  hasColon: share.content.includes(":"),
+                  isPasswordProtected
                 });
-                setDecryptedContent("[⚠️ Unable to decrypt content. Please enter the room password.]");
+                
+                // Show appropriate error message based on room type
+                if (isPasswordProtected) {
+                  setDecryptedContent("[⚠️ Unable to decrypt content. Please enter the room password.]");
+                } else {
+                  // Public room - content shouldn't be encrypted, but it is
+                  // This might be old content or an error - try to show as-is
+                  setDecryptedContent("[⚠️ Unable to decrypt content. This may be encrypted content from a previous password-protected state.]");
+                }
               }
             } else {
               // Try each key until one works

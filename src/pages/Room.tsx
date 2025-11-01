@@ -506,13 +506,121 @@ export default function Room() {
     if (updates.password !== undefined) {
       rpcParams.p_update_password = true;
       if (updates.password === null) {
-        // Removing password - pass null explicitly
+        // Removing password - decrypt all existing encrypted content before removing password
+        // Get current password before it's removed (needed to decrypt existing content)
+        const currentPassword = sessionStorage.getItem(`room_password_${id}`);
+        const wasPasswordProtected = !!room?.password;
+        
+        if (wasPasswordProtected && currentPassword) {
+          try {
+            // Fetch all shares in the room
+            const { data: allShares, error: sharesError } = await supabase
+              .from("shares")
+              .select("*")
+              .eq("room_id", id);
+
+            if (sharesError) {
+              console.error("Error fetching shares for decryption:", sharesError);
+              toast.error("Failed to fetch shares for decryption");
+              throw sharesError;
+            }
+
+            if (allShares && allShares.length > 0) {
+              // Decrypt each share and save as unencrypted
+              const decryptionPromises = allShares.map(async (share) => {
+                try {
+                  const updateData: any = {};
+                  
+                  // Handle content (text, code, URLs)
+                  if (share.content && isEncrypted(share.content)) {
+                    // Decrypt content with current password
+                    const decryptedContent = await decrypt(share.content, currentPassword.trim(), true);
+                    // Verify decryption succeeded (result should not be encrypted)
+                    if (!isEncrypted(decryptedContent)) {
+                      updateData.content = decryptedContent;
+                    } else {
+                      console.error("Decryption failed for share content", share.id);
+                      return null;
+                    }
+                  }
+
+                  // Handle file names
+                  if (share.type === "file" && share.file_name && isEncrypted(share.file_name)) {
+                    // Decrypt file name with current password
+                    const decryptedFileName = await decrypt(share.file_name, currentPassword.trim(), true);
+                    if (!isEncrypted(decryptedFileName)) {
+                      updateData.file_name = decryptedFileName;
+                    } else {
+                      console.error("Decryption failed for share file name", share.id);
+                      // Continue even if file name decryption fails
+                    }
+                  }
+
+                  // Only update if we have decrypted content
+                  if (Object.keys(updateData).length > 0) {
+                    const { error: updateError } = await supabase
+                      .from("shares")
+                      .update(updateData)
+                      .eq("id", share.id);
+
+                    if (updateError) {
+                      console.error("Error updating share during decryption:", updateError, share.id);
+                      return null;
+                    }
+
+                    return share.id;
+                  }
+                  
+                  return null;
+                } catch (error) {
+                  console.error("Error decrypting share:", share.id, error);
+                  return null;
+                }
+              });
+
+              // Wait for all decryptions to complete
+              const results = await Promise.all(decryptionPromises);
+              const successCount = results.filter(r => r !== null).length;
+              const totalCount = allShares.length;
+              
+              if (successCount > 0) {
+                toast.success(`Decrypted ${successCount} of ${totalCount} item(s) - password removed`);
+              } else if (totalCount > 0) {
+                toast.warning("Failed to decrypt some existing content. Please verify password was correct.");
+              }
+            }
+          } catch (error) {
+            console.error("Error during content decryption:", error);
+            toast.error("Failed to decrypt existing content before removing password");
+            // Don't proceed with password removal if decryption fails
+            throw error;
+          }
+        }
+        
+        // Now remove password - pass null explicitly
         rpcParams.p_password = null;
-        // Generate new encryption key for future content
-        const newKey = await generateKey();
-        sessionStorage.setItem(`room_key_${id}`, newKey);
-        setEncryptionKey(newKey);
-        setIsPasswordKey(false);
+        
+        // For public rooms, encryption key should come from URL fragment if available
+        // Otherwise, content will be stored unencrypted (encryptionKey = null)
+        const fragment = location.hash.substring(1);
+        if (fragment) {
+          // URL has encryption key - use it for future content
+          sessionStorage.setItem(`room_key_${id}`, fragment);
+          setEncryptionKey(fragment);
+          setIsPasswordKey(false);
+        } else {
+          // No URL fragment - truly public room, no encryption for future content
+          const storedKey = sessionStorage.getItem(`room_key_${id}`);
+          if (storedKey) {
+            setEncryptionKey(storedKey);
+            setIsPasswordKey(false);
+          } else {
+            // No key at all - future content will be unencrypted
+            setEncryptionKey(null);
+            setIsPasswordKey(false);
+          }
+        }
+        
         sessionStorage.removeItem(`room_password_${id}`);
         localStorage.removeItem(`room_password_${id}`);
         // Clear old encryption keys since password is removed
@@ -1018,6 +1126,7 @@ export default function Room() {
                           canDelete={room?.permissions === "edit"}
                           onDelete={() => deleteShare(share.id)}
                           oldEncryptionKeys={oldEncryptionKeys}
+                          isPasswordProtected={!!room?.password}
                         />
                         </Card>
                       ))}
