@@ -61,15 +61,17 @@ export default function Room() {
 
     loadRoom();
     subscribeToShares();
-
-    // Cleanup: Clear password from sessionStorage when leaving room (navigating away)
-    // This ensures password is asked every time user enters the room after exiting
-    return () => {
-      if (id) {
-        sessionStorage.removeItem(`room_password_${id}`);
-      }
-    };
   }, [id]);
+
+  // Clear password only when navigating away from the room (not on refresh)
+  // sessionStorage naturally persists on refresh and clears on tab close
+  useEffect(() => {
+    // Only clear if pathname changes and we're no longer on this room's route
+    if (id && !location.pathname.startsWith(`/room/${id}`)) {
+      // User navigated away from this room - clear password
+      sessionStorage.removeItem(`room_password_${id}`);
+    }
+  }, [location.pathname, id]);
 
   const loadRoom = async (skipPasswordCheck = false) => {
     try {
