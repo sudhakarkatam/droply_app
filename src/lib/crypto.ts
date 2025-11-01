@@ -171,14 +171,37 @@ export async function decrypt(
 
 /**
  * Check if data is encrypted
+ * More strict check to avoid false positives (e.g., URLs with colons)
  */
 export function isEncrypted(data: string): boolean {
   if (!data || !data.includes(":")) return false;
+  
   const parts = data.split(":");
+  
   // Encrypted data should have format: [salt?][iv][encrypted] (2 or 3 parts)
   // Password-based: 3 parts (salt:iv:encrypted)
   // Key-based: 2 parts (iv:encrypted)
-  return parts.length === 2 || parts.length === 3;
+  if (parts.length !== 2 && parts.length !== 3) return false;
+  
+  // Each part should be base64-encoded and reasonably long
+  // Base64 strings contain A-Z, a-z, 0-9, +, /, and = (padding)
+  const base64Pattern = /^[A-Za-z0-9+/=]+$/;
+  
+  // Check if all parts look like base64 (encrypted data)
+  // Minimum length for IV is ~12 bytes = ~16 base64 chars
+  // Minimum length for salt is ~16 bytes = ~24 base64 chars
+  for (const part of parts) {
+    if (part.length < 10) return false; // Too short to be encrypted data
+    if (!base64Pattern.test(part)) return false; // Doesn't look like base64
+  }
+  
+  // Additional check: if it's 2 parts, it should be key-based encryption
+  // If it's 3 parts, it should be password-based encryption
+  // Both should have substantial length (encrypted content is usually longer)
+  const totalLength = parts.join("").length;
+  if (totalLength < 30) return false; // Too short for encrypted data
+  
+  return true;
 }
 
 /**

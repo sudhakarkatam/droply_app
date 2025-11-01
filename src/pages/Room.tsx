@@ -210,18 +210,19 @@ export default function Room() {
     }
   }, [shares, encryptionKey, isPasswordKey]);
 
-  // Calculate counts for each tab (simplified - code/text distinction handled in ShareDisplay)
+  // Calculate counts for each tab
   const shareCounts = useMemo(() => {
     const files = decryptedShares.filter(s => s.type === "file").length;
     const links = decryptedShares.filter(s => s.type === "url").length;
-    const textShares = decryptedShares.filter(s => s.type === "text").length;
+    const code = decryptedShares.filter(s => s.type === "code").length;
+    const text = decryptedShares.filter(s => s.type === "text").length;
     
     return {
       all: decryptedShares.length,
       files,
-      code: textShares, // Will show all text shares in code tab initially
+      code,
       links,
-      text: textShares, // Will show all text shares in text tab initially
+      text,
     };
   }, [decryptedShares]);
 
@@ -353,11 +354,17 @@ export default function Room() {
     }
 
     try {
-      const encryptedUrl = await encrypt(url, encryptionKey, isPasswordKey);
+      // Normalize URL - add protocol if missing
+      let normalizedUrl = url.trim();
+      if (!normalizedUrl.match(/^https?:\/\//i)) {
+        normalizedUrl = `https://${normalizedUrl}`;
+      }
+
+      const encryptedUrl = await encrypt(normalizedUrl, encryptionKey, isPasswordKey);
 
       // Verify encryption succeeded for password-protected rooms
       if (room?.password) {
-        if (!verifyEncryption(encryptedUrl, url)) {
+        if (!verifyEncryption(encryptedUrl, normalizedUrl)) {
           toast.error("Encryption failed. Content cannot be saved unencrypted.");
           console.error("Encryption verification failed");
           return;
@@ -409,7 +416,7 @@ export default function Room() {
 
       const { error } = await supabase.from("shares").insert({
         room_id: id,
-        type: "text",
+        type: "code",
         content: encryptedCode,
       });
 
@@ -986,9 +993,8 @@ export default function Room() {
                         if (activeTab === "all") return true;
                         if (activeTab === "files") return share.type === "file";
                         if (activeTab === "links") return share.type === "url";
-                        if (activeTab === "code" || activeTab === "text") {
-                          return share.type === "text";
-                        }
+                        if (activeTab === "code") return share.type === "code";
+                        if (activeTab === "text") return share.type === "text";
                         return true;
                       })
                       .map((share) => (

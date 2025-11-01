@@ -1,4 +1,4 @@
-import { FileText, Link2, Download, ExternalLink, Copy, File } from "lucide-react";
+import { FileText, Link2, Download, ExternalLink, Copy, File, Code } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
@@ -91,13 +91,21 @@ export function ShareDisplay({ share, encryptionKey, isPasswordKey, canDelete, o
             });
 
             if (keysToTry.length === 0) {
-              // No keys available
-              console.error("Encrypted content detected but no encryption keys available", {
-                shareId: share.id,
-                shareType: share.type,
-                contentLength: share.content.length
-              });
-              setDecryptedContent("[⚠️ Unable to decrypt content. Please enter the room password.]");
+              // No keys available - might be unencrypted or key not loaded yet
+              // Check if content might actually be unencrypted (common pattern check)
+              if (share.content.length < 50 && !share.content.includes(":")) {
+                // Likely unencrypted, show as-is
+                setDecryptedContent(share.content);
+              } else {
+                // Encrypted but no key - show helpful message
+                console.error("Encrypted content detected but no encryption keys available", {
+                  shareId: share.id,
+                  shareType: share.type,
+                  contentLength: share.content.length,
+                  hasColon: share.content.includes(":")
+                });
+                setDecryptedContent("[⚠️ Unable to decrypt content. Please enter the room password.]");
+              }
             } else {
               // Try each key until one works
               let decrypted: string | null = null;
@@ -121,12 +129,32 @@ export function ShareDisplay({ share, encryptionKey, isPasswordKey, canDelete, o
                 setDecryptedContent(decrypted);
               } else {
                 // All decryption attempts failed
-                console.error("Failed to decrypt content with all available keys", {
-                  shareId: share.id,
-                  keysTried: keysToTry.length,
-                  lastError
-                });
-                setDecryptedContent("[⚠️ Unable to decrypt content. Please check your password or refresh the page.]");
+                // Check if content might actually be unencrypted (false positive from isEncrypted check)
+                // This can happen if content contains ':' but isn't actually encrypted
+                const parts = share.content.split(":");
+                const mightBeUnencrypted = parts.length === 2 && 
+                  (parts[0].length < 20 || parts[1].length < 20) &&
+                  !parts[0].match(/^[A-Za-z0-9+/=]+$/) && // Not base64-like
+                  !parts[1].match(/^[A-Za-z0-9+/=]+$/);
+                
+                if (mightBeUnencrypted) {
+                  // Likely unencrypted text with ':' separator, show as-is
+                  console.warn("Decryption failed but content might be unencrypted", {
+                    shareId: share.id,
+                    content: share.content.substring(0, 50)
+                  });
+                  setDecryptedContent(share.content);
+                } else {
+                  // Genuine encryption failure
+                  console.error("Failed to decrypt content with all available keys", {
+                    shareId: share.id,
+                    shareType: share.type,
+                    keysTried: keysToTry.length,
+                    lastError: lastError,
+                    contentPreview: share.content.substring(0, 100)
+                  });
+                  setDecryptedContent("[⚠️ Unable to decrypt content. Please check your password or refresh the page.]");
+                }
               }
             }
           } else {
@@ -185,6 +213,32 @@ export function ShareDisplay({ share, encryptionKey, isPasswordKey, canDelete, o
     return content.replace(/^```\w+\n/, "").replace(/\n```$/, "");
   };
 
+  const makeLinksClickable = (text: string) => {
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    const parts = text.split(urlRegex);
+    
+    return (
+      <>
+        {parts.map((part, index) => {
+          if (part.match(urlRegex)) {
+            return (
+              <a
+                key={index}
+                href={part}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary hover:underline break-all"
+              >
+                {part}
+              </a>
+            );
+          }
+          return <span key={index}>{part}</span>;
+        })}
+      </>
+    );
+  };
+
   if (isDecrypting) {
     return (
       <div className="flex items-center justify-center p-4">
@@ -204,6 +258,7 @@ export function ShareDisplay({ share, encryptionKey, isPasswordKey, canDelete, o
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           {share.type === "text" && <FileText className="w-4 h-4" />}
+          {share.type === "code" && <Code className="w-4 h-4" />}
           {share.type === "url" && <Link2 className="w-4 h-4" />}
           {share.type === "file" && <File className="w-4 h-4" />}
           <span>{formatDistanceToNow(new Date(share.created_at), { addSuffix: true })}</span>
@@ -214,21 +269,23 @@ export function ShareDisplay({ share, encryptionKey, isPasswordKey, canDelete, o
         </Button>
       </div>
 
+      {share.type === "code" && (
+        <div className="space-y-2">
+          <SyntaxHighlighter
+            language={extractCodeLanguage(decryptedContent)}
+            style={oneDark}
+            className="rounded-lg text-sm"
+          >
+            {extractCodeContent(decryptedContent)}
+          </SyntaxHighlighter>
+        </div>
+      )}
+
       {share.type === "text" && (
         <div className="space-y-2">
-          {isCodeSnippet(decryptedContent) ? (
-            <SyntaxHighlighter
-              language={extractCodeLanguage(decryptedContent)}
-              style={oneDark}
-              className="rounded-lg text-sm"
-            >
-              {extractCodeContent(decryptedContent)}
-            </SyntaxHighlighter>
-          ) : (
-            <p className="text-foreground whitespace-pre-wrap bg-background/50 p-4 rounded-lg">
-              {decryptedContent}
-            </p>
-          )}
+          <p className="text-foreground whitespace-pre-wrap bg-background/50 p-4 rounded-lg">
+            {makeLinksClickable(decryptedContent)}
+          </p>
         </div>
       )}
 
