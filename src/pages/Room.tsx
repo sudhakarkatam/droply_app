@@ -17,7 +17,7 @@ import { FileUpload } from "@/components/FileUpload";
 import { PasswordDialog } from "@/components/PasswordDialog";
 import { CodeSnippetUpload } from "@/components/CodeSnippetUpload";
 import { RoomSettings } from "@/components/RoomSettings";
-import { encrypt, decrypt, hashPassword, generateKey, verifyEncryption, isEncrypted } from "@/lib/crypto";
+import { encrypt, decrypt, hashPassword, generateKey, verifyEncryption, isEncrypted, deriveKeyFromRoomId } from "@/lib/crypto";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 
 export default function Room() {
@@ -48,20 +48,20 @@ export default function Room() {
       return;
     }
 
-    // Extract encryption key from URL fragment (for non-password rooms)
+    // For public rooms, encryption key will be derived from room ID in loadRoom()
+    // For private rooms, encryption key comes from password
+    // URL fragment keys are kept for backward compatibility with old rooms
+    
+    // Extract encryption key from URL fragment (for backward compatibility)
     const fragment = location.hash.substring(1);
     if (fragment && fragment.trim().length > 0) {
-      // Validate that fragment looks like a valid encryption key (base64-like, reasonable length)
-      // Encryption keys are typically 32+ characters when base64 encoded
       const trimmedFragment = fragment.trim();
       if (trimmedFragment.length >= 20) {
         setEncryptionKey(trimmedFragment);
         sessionStorage.setItem(`room_key_${id}`, trimmedFragment);
-      } else {
-        console.warn("URL fragment is too short to be a valid encryption key, ignoring");
       }
     } else {
-      // Try to load from sessionStorage (not localStorage)
+      // Try to load from sessionStorage (for backward compatibility)
       const storedKey = sessionStorage.getItem(`room_key_${id}`);
       if (storedKey) {
         setEncryptionKey(storedKey);
@@ -188,6 +188,14 @@ export default function Room() {
           // Non-password (public) room - everyone is a creator
           // This allows full access to settings and content management on any device
           setIsCreator(true);
+          
+          // For public rooms: derive encryption key from room ID
+          // This ensures content is always encrypted and anyone with room ID can decrypt
+          if (!encryptionKey && id) {
+            const roomIdKey = await deriveKeyFromRoomId(id);
+            setEncryptionKey(roomIdKey);
+            setIsPasswordKey(false);
+          }
         }
       }
 
@@ -225,26 +233,42 @@ export default function Room() {
         try {
           if (share.content && (share.type === "text" || share.type === "code" || share.type === "url")) {
             if (isEncrypted(share.content)) {
-              // Try to decrypt
+              // Try to decrypt with available keys
+              let decrypted: string | null = null;
+              
+              // Try current encryption key first
               if (encryptionKey) {
                 try {
-                  const decrypted = await decrypt(share.content, encryptionKey, isPasswordKey);
-                  if (!isEncrypted(decrypted)) {
-                    contentMap.set(share.id, decrypted);
-                  } else {
-                    // Decryption failed or result still encrypted, use original
-                    contentMap.set(share.id, share.content);
+                  const attempt = await decrypt(share.content, encryptionKey, isPasswordKey);
+                  if (!isEncrypted(attempt)) {
+                    decrypted = attempt;
                   }
                 } catch {
-                  // Decryption failed, use original for search (won't match encrypted content)
-                  contentMap.set(share.id, share.content);
+                  // Decryption failed, try other keys
                 }
+              }
+              
+              // For public rooms: try room ID key if decryption failed or no key available
+              if (!decrypted && !isPasswordKey && id) {
+                try {
+                  const roomIdKey = await deriveKeyFromRoomId(id);
+                  const attempt = await decrypt(share.content, roomIdKey, false);
+                  if (!isEncrypted(attempt)) {
+                    decrypted = attempt;
+                  }
+                } catch {
+                  // Decryption failed
+                }
+              }
+              
+              if (decrypted) {
+                contentMap.set(share.id, decrypted);
               } else {
-                // No key available, can't decrypt - won't be searchable
+                // Decryption failed, use empty string for search (won't match)
                 contentMap.set(share.id, "");
               }
             } else {
-              // Not encrypted, use as-is
+              // Not encrypted, use as-is (legacy content)
               contentMap.set(share.id, share.content);
             }
           }
@@ -352,6 +376,13 @@ export default function Room() {
       return;
     }
 
+    // For public rooms: ensure encryption key is set (derive from room ID if missing)
+    if (!room?.password && !encryptionKey && id) {
+      const roomIdKey = await deriveKeyFromRoomId(id);
+      setEncryptionKey(roomIdKey);
+      setIsPasswordKey(false);
+    }
+
     // Validate encryption for password-protected rooms
     if (room?.password && !encryptionKey) {
       toast.error("Password required to encrypt content");
@@ -360,18 +391,17 @@ export default function Room() {
     }
 
     try {
-      const encryptedText = await encrypt(text, encryptionKey, isPasswordKey);
+      // Always encrypt content - pass roomId for public rooms
+      const encryptedText = await encrypt(text, encryptionKey, isPasswordKey, id || undefined);
 
-      // Verify encryption succeeded for password-protected rooms
-      if (room?.password) {
-        if (!verifyEncryption(encryptedText, text)) {
-          toast.error("Encryption failed. Content cannot be saved unencrypted.");
-          console.error("Encryption verification failed:", { 
-            original: text.substring(0, 20), 
-            encrypted: encryptedText.substring(0, 50) 
-          });
-          return;
-        }
+      // Always verify encryption succeeded
+      if (!verifyEncryption(encryptedText, text)) {
+        toast.error("Encryption failed. Content cannot be saved unencrypted.");
+        console.error("Encryption verification failed:", { 
+          original: text.substring(0, 20), 
+          encrypted: encryptedText.substring(0, 50) 
+        });
+        return;
       }
 
       const { error } = await supabase.from("shares").insert({
@@ -400,6 +430,13 @@ export default function Room() {
       return;
     }
 
+    // For public rooms: ensure encryption key is set (derive from room ID if missing)
+    if (!room?.password && !encryptionKey && id) {
+      const roomIdKey = await deriveKeyFromRoomId(id);
+      setEncryptionKey(roomIdKey);
+      setIsPasswordKey(false);
+    }
+
     // Validate encryption for password-protected rooms
     if (room?.password && !encryptionKey) {
       toast.error("Password required to encrypt content");
@@ -414,15 +451,14 @@ export default function Room() {
         normalizedUrl = `https://${normalizedUrl}`;
       }
 
-      const encryptedUrl = await encrypt(normalizedUrl, encryptionKey, isPasswordKey);
+      // Always encrypt content - pass roomId for public rooms
+      const encryptedUrl = await encrypt(normalizedUrl, encryptionKey, isPasswordKey, id || undefined);
 
-      // Verify encryption succeeded for password-protected rooms
-      if (room?.password) {
-        if (!verifyEncryption(encryptedUrl, normalizedUrl)) {
-          toast.error("Encryption failed. Content cannot be saved unencrypted.");
-          console.error("Encryption verification failed");
-          return;
-        }
+      // Always verify encryption succeeded
+      if (!verifyEncryption(encryptedUrl, normalizedUrl)) {
+        toast.error("Encryption failed. Content cannot be saved unencrypted.");
+        console.error("Encryption verification failed");
+        return;
       }
 
       const { error } = await supabase.from("shares").insert({
@@ -449,6 +485,13 @@ export default function Room() {
       return;
     }
 
+    // For public rooms: ensure encryption key is set (derive from room ID if missing)
+    if (!room?.password && !encryptionKey && id) {
+      const roomIdKey = await deriveKeyFromRoomId(id);
+      setEncryptionKey(roomIdKey);
+      setIsPasswordKey(false);
+    }
+
     // Validate encryption for password-protected rooms
     if (room?.password && !encryptionKey) {
       toast.error("Password required to encrypt content");
@@ -457,15 +500,14 @@ export default function Room() {
     }
 
     try {
-      const encryptedCode = await encrypt(code, encryptionKey, isPasswordKey);
+      // Always encrypt content - pass roomId for public rooms
+      const encryptedCode = await encrypt(code, encryptionKey, isPasswordKey, id || undefined);
 
-      // Verify encryption succeeded for password-protected rooms
-      if (room?.password) {
-        if (!verifyEncryption(encryptedCode, code)) {
-          toast.error("Encryption failed. Content cannot be saved unencrypted.");
-          console.error("Encryption verification failed");
-          return;
-        }
+      // Always verify encryption succeeded
+      if (!verifyEncryption(encryptedCode, code)) {
+        toast.error("Encryption failed. Content cannot be saved unencrypted.");
+        console.error("Encryption verification failed");
+        return;
       }
 
       const { error } = await supabase.from("shares").insert({
@@ -729,8 +771,26 @@ export default function Room() {
                         // This shouldn't happen, but skip if no old password
                         return null;
                       }
+                    } else if (!wasPasswordProtected && isEncrypted(share.content)) {
+                      // Public room content encrypted with room ID key - decrypt it
+                      if (id) {
+                        try {
+                          const roomIdKey = await deriveKeyFromRoomId(id);
+                          decryptedContent = await decrypt(share.content, roomIdKey, false);
+                          // Verify decryption succeeded (result should not be encrypted)
+                          if (isEncrypted(decryptedContent)) {
+                            console.error("Failed to decrypt public room content with room ID key", share.id);
+                            return null;
+                          }
+                        } catch (error) {
+                          console.error("Error decrypting public room content:", error);
+                          return null;
+                        }
+                      } else {
+                        return null;
+                      }
                     } else {
-                      // Content was never encrypted (from public room) - use as-is
+                      // Content was never encrypted (shouldn't happen in new system, but handle for legacy)
                       decryptedContent = share.content;
                     }
                   }
@@ -745,8 +805,25 @@ export default function Room() {
                         // Fallback to original if decryption fails
                         decryptedFileName = share.file_name;
                       }
+                    } else if (!wasPasswordProtected && isEncrypted(share.file_name)) {
+                      // Public room file name encrypted with room ID key - decrypt it
+                      if (id) {
+                        try {
+                          const roomIdKey = await deriveKeyFromRoomId(id);
+                          decryptedFileName = await decrypt(share.file_name, roomIdKey, false);
+                          if (isEncrypted(decryptedFileName)) {
+                            // Decryption failed
+                            decryptedFileName = share.file_name;
+                          }
+                        } catch (error) {
+                          console.error("Error decrypting public room file name:", error);
+                          decryptedFileName = share.file_name;
+                        }
+                      } else {
+                        decryptedFileName = share.file_name;
+                      }
                     } else {
-                      // File name was never encrypted - use as-is
+                      // File name was never encrypted - use as-is (legacy)
                       decryptedFileName = share.file_name;
                     }
                   }
@@ -1232,6 +1309,7 @@ export default function Room() {
                           onDelete={() => deleteShare(share.id)}
                           oldEncryptionKeys={oldEncryptionKeys}
                           isPasswordProtected={!!room?.password}
+                          roomId={id || undefined}
                         />
                         </Card>
                       ))}

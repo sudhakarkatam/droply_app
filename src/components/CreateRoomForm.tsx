@@ -92,12 +92,6 @@ export function CreateRoomForm() {
         }
       }
 
-      // Generate encryption key for non-password rooms
-      let encryptionKey = "";
-      if (!password.trim()) {
-        encryptionKey = await generateKey();
-      }
-
       // Hash password before storing (if provided)
       const passwordHash = password.trim() ? await hashPassword(password.trim()) : null;
 
@@ -105,6 +99,7 @@ export function CreateRoomForm() {
       const creatorToken = crypto.randomUUID();
 
       // Create room with settings
+      // For public rooms, encryption key will be derived from room ID automatically
       const { error } = await supabase.from("rooms").insert({
         id: finalRoomName,
         password: passwordHash,
@@ -119,19 +114,13 @@ export function CreateRoomForm() {
 
       // Store room access data in localStorage (creator token persists)
       // Password stored in sessionStorage in Room component after verification
+      // For public rooms, encryption key is derived from room ID - no need to store
       localStorage.setItem(`room_creator_${finalRoomName}`, creatorToken);
-      if (encryptionKey) {
-        // For non-password rooms, store key in sessionStorage (clears on tab close)
-        sessionStorage.setItem(`room_key_${finalRoomName}`, encryptionKey);
-      }
 
       toast.success("Room created!");
       setTimeout(() => {
-        // Include encryption key in URL fragment for non-password rooms
-        const url = encryptionKey 
-          ? `/room/${finalRoomName}#${encryptionKey}`
-          : `/room/${finalRoomName}`;
-        navigate(url);
+        // Navigate to room - encryption key will be auto-derived from room ID for public rooms
+        navigate(`/room/${finalRoomName}`);
       }, 300);
     } catch (error) {
       console.error("Error creating room:", error);

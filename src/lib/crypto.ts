@@ -3,13 +3,14 @@
  * 
  * Encryption strategy:
  * - Password-protected rooms: Key derived from password using PBKDF2
- * - Public rooms: Random key generated and stored in URL fragment (#key)
+ * - Public rooms: Key deterministically derived from room ID using PBKDF2
  */
 
 const SALT_LENGTH = 16;
 const IV_LENGTH = 12;
 const KEY_LENGTH = 256;
 const ITERATIONS = 100000;
+const ROOM_ID_ITERATIONS = 10000; // Lower iterations for deterministic key derivation
 
 /**
  * Generate a random encryption key
@@ -57,6 +58,40 @@ export async function deriveKeyFromPassword(
 }
 
 /**
+ * Derive a deterministic encryption key from room ID for public rooms
+ * Same room ID always produces the same key
+ */
+export async function deriveKeyFromRoomId(roomId: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const roomIdBuffer = encoder.encode(roomId);
+  
+  // Use PBKDF2 with room ID as password and room ID-based salt for determinism
+  // This ensures same room ID always produces same key
+  const saltBuffer = encoder.encode(`droply-room-salt-${roomId}`);
+  
+  const baseKey = await crypto.subtle.importKey(
+    "raw",
+    roomIdBuffer,
+    "PBKDF2",
+    false,
+    ["deriveBits"]
+  );
+  
+  const derivedBits = await crypto.subtle.deriveBits(
+    {
+      name: "PBKDF2",
+      salt: saltBuffer,
+      iterations: ROOM_ID_ITERATIONS,
+      hash: "SHA-256",
+    },
+    baseKey,
+    KEY_LENGTH
+  );
+  
+  return bufferToBase64(derivedBits);
+}
+
+/**
  * Import a key from base64 string
  */
 export async function importKey(keyString: string): Promise<CryptoKey> {
@@ -76,7 +111,8 @@ export async function importKey(keyString: string): Promise<CryptoKey> {
 export async function encrypt(
   data: string,
   keySource: string | null,
-  isPasswordKey: boolean = false
+  isPasswordKey: boolean = false,
+  roomId?: string
 ): Promise<string> {
   const encoder = new TextEncoder();
   const dataBuffer = encoder.encode(data);
@@ -84,9 +120,15 @@ export async function encrypt(
   let key: CryptoKey;
   let salt: ArrayBuffer | null = null;
 
+  // For public rooms without keySource: derive from room ID
+  if (!keySource && roomId) {
+    const roomIdKey = await deriveKeyFromRoomId(roomId);
+    keySource = roomIdKey;
+  }
+
   if (!keySource) {
-    // No encryption for rooms without password/key
-    return data;
+    // No encryption key available - throw error (content must be encrypted)
+    throw new Error("Encryption key is required. Content must be encrypted before saving to database.");
   }
 
   if (isPasswordKey) {

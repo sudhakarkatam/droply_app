@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
-import { decrypt, isEncrypted } from "@/lib/crypto";
+import { decrypt, isEncrypted, deriveKeyFromRoomId } from "@/lib/crypto";
 import { useEffect, useState } from "react";
 
 interface ShareDisplayProps {
@@ -15,9 +15,10 @@ interface ShareDisplayProps {
   onDelete: () => void;
   oldEncryptionKeys?: string[]; // Array of old passwords for decrypting old content
   isPasswordProtected?: boolean; // Whether the room is password-protected
+  roomId?: string; // Room ID for deriving encryption key in public rooms
 }
 
-export function ShareDisplay({ share, encryptionKey, isPasswordKey, canDelete, onDelete, oldEncryptionKeys = [], isPasswordProtected = false }: ShareDisplayProps) {
+export function ShareDisplay({ share, encryptionKey, isPasswordKey, canDelete, onDelete, oldEncryptionKeys = [], isPasswordProtected = false, roomId }: ShareDisplayProps) {
   const [decryptedContent, setDecryptedContent] = useState<string>("");
   const [isDecrypting, setIsDecrypting] = useState(true);
 
@@ -27,7 +28,7 @@ export function ShareDisplay({ share, encryptionKey, isPasswordKey, canDelete, o
         if (share.type === "file" && share.file_name) {
           // Check if file name is encrypted
           if (isEncrypted(share.file_name)) {
-            // Try decrypting with all available keys (current + old passwords)
+            // Try decrypting with all available keys (current + old passwords + room ID)
             const keysToTry: { key: string; isPasswordKey: boolean }[] = [];
             
             // Add current encryption key first
@@ -41,6 +42,16 @@ export function ShareDisplay({ share, encryptionKey, isPasswordKey, canDelete, o
                 keysToTry.push({ key: oldKey, isPasswordKey: true });
               }
             });
+            
+            // For public rooms: try room ID key if no other keys available
+            if (keysToTry.length === 0 && !isPasswordProtected && roomId) {
+              try {
+                const roomIdKey = await deriveKeyFromRoomId(roomId);
+                keysToTry.push({ key: roomIdKey, isPasswordKey: false });
+              } catch (error) {
+                console.error("Failed to derive room ID key for file name:", error);
+              }
+            }
 
             if (keysToTry.length === 0) {
               // No keys available, show original
@@ -76,7 +87,7 @@ export function ShareDisplay({ share, encryptionKey, isPasswordKey, canDelete, o
         } else if (share.content) {
           // Check if content is encrypted
           if (isEncrypted(share.content)) {
-            // Try decrypting with all available keys (current + old passwords)
+            // Try decrypting with all available keys (current + old passwords + room ID)
             const keysToTry: { key: string; isPasswordKey: boolean }[] = [];
             
             // Add current encryption key first
@@ -90,13 +101,36 @@ export function ShareDisplay({ share, encryptionKey, isPasswordKey, canDelete, o
                 keysToTry.push({ key: oldKey, isPasswordKey: true });
               }
             });
+            
+            // For public rooms: also try room ID key if not already in keysToTry
+            if (!isPasswordProtected && roomId) {
+              try {
+                const roomIdKey = await deriveKeyFromRoomId(roomId);
+                if (!keysToTry.find(k => k.key === roomIdKey)) {
+                  keysToTry.push({ key: roomIdKey, isPasswordKey: false });
+                }
+              } catch (error) {
+                console.error("Failed to derive room ID key:", error);
+              }
+            }
 
             if (keysToTry.length === 0) {
-              // No keys available - check if content is actually encrypted or just looks like it
-              // For public rooms without passwords, content is stored unencrypted
-              // If isEncrypted returned true but no key is available, it might be a false positive
+              // No keys available - try to derive from room ID for public rooms
+              if (!isPasswordProtected && roomId) {
+                try {
+                  const roomIdKey = await deriveKeyFromRoomId(roomId);
+                  const decrypted = await decrypt(share.content, roomIdKey, false);
+                  if (!isEncrypted(decrypted)) {
+                    setDecryptedContent(decrypted);
+                    setIsDecrypting(false);
+                    return;
+                  }
+                } catch (error) {
+                  console.error("Failed to decrypt with room ID key:", error);
+                }
+              }
               
-              // Check if this looks like unencrypted content that was misidentified
+              // Check if content is actually encrypted or just looks like it
               const parts = share.content.split(":");
               const looksLikeEncrypted = parts.length === 2 || parts.length === 3;
               const allPartsBase64 = looksLikeEncrypted && parts.every(part => 
@@ -104,20 +138,12 @@ export function ShareDisplay({ share, encryptionKey, isPasswordKey, canDelete, o
               );
               
               if (!allPartsBase64 || share.content.length < 30) {
-                // Not actually encrypted - likely unencrypted content, show as-is
-                // This is normal for public rooms without passwords
+                // Not actually encrypted - likely unencrypted content (legacy), show as-is
                 console.warn("Content marked as encrypted but appears unencrypted, showing as-is", {
                   shareId: share.id,
                   shareType: share.type,
                   contentLength: share.content.length,
                   isPasswordProtected
-                });
-                setDecryptedContent(share.content);
-              } else if (!isPasswordProtected && !encryptionKey) {
-                // Public room with no encryption key - content should be unencrypted
-                // Even if it looks encrypted, for public rooms we should try to show it
-                console.warn("Public room: Content appears encrypted but no key available, treating as unencrypted", {
-                  shareId: share.id
                 });
                 setDecryptedContent(share.content);
               } else {
@@ -127,22 +153,16 @@ export function ShareDisplay({ share, encryptionKey, isPasswordKey, canDelete, o
                   shareType: share.type,
                   contentLength: share.content.length,
                   hasColon: share.content.includes(":"),
-                  isPasswordProtected
+                  isPasswordProtected,
+                  hasRoomId: !!roomId
                 });
                 
                 // Show appropriate error message based on room type
                 if (isPasswordProtected) {
                   setDecryptedContent("[⚠️ Unable to decrypt content. Please enter the room password.]");
                 } else {
-                  // Public room - content shouldn't be encrypted, but it is
-                  // This might be encrypted with a URL fragment key that's not available
-                  // Show helpful message
-                  const hasHashInUrl = window.location.hash.length > 1;
-                  if (hasHashInUrl) {
-                    setDecryptedContent("[⚠️ Unable to decrypt content. The encryption key in the URL may be invalid or corrupted.]");
-                  } else {
-                    setDecryptedContent("[⚠️ Unable to decrypt content. This content was encrypted with a key that is not available. If this room previously had a password or encryption key in the URL, it may have been lost.]");
-                  }
+                  // Public room - try room ID key if available
+                  setDecryptedContent("[⚠️ Unable to decrypt content. Please refresh the page or contact room creator.]");
                 }
               }
             } else {

@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { encrypt, verifyEncryption } from "@/lib/crypto";
+import { encrypt, verifyEncryption, deriveKeyFromRoomId } from "@/lib/crypto";
 
 interface FileUploadProps {
   roomId: string;
@@ -71,8 +71,17 @@ export function FileUpload({ roomId, onUploadComplete, encryptionKey, isPassword
       return;
     }
 
+    // For public rooms: ensure encryption key is set (derive from room ID if missing)
+    let finalEncryptionKey = encryptionKey;
+    let finalIsPasswordKey = isPasswordKey;
+    
+    if (!isPasswordKey && !encryptionKey && roomId) {
+      finalEncryptionKey = await deriveKeyFromRoomId(roomId);
+      finalIsPasswordKey = false;
+    }
+
     // Validate encryption for password-protected rooms
-    if (isPasswordKey && !encryptionKey) {
+    if (finalIsPasswordKey && !finalEncryptionKey) {
       toast.error("Password required to encrypt file name");
       return;
     }
@@ -93,16 +102,14 @@ export function FileUpload({ roomId, onUploadComplete, encryptionKey, isPassword
       // Get public URL
       const { data } = supabase.storage.from("droply-files").getPublicUrl(fileName);
 
-      // Encrypt file metadata
-      let encryptedFileName: string;
-      if (isPasswordKey && encryptionKey) {
-        encryptedFileName = await encrypt(file.name, encryptionKey, isPasswordKey);
-        // Verify encryption succeeded
-        if (!verifyEncryption(encryptedFileName, file.name)) {
-          throw new Error("Encryption failed - file name cannot be saved unencrypted");
-        }
-      } else {
-        encryptedFileName = file.name; // No encryption for non-password rooms
+      // Always encrypt file metadata
+      // For public rooms: use room ID-derived key
+      // For private rooms: use password-derived key
+      const encryptedFileName = await encrypt(file.name, finalEncryptionKey, finalIsPasswordKey, roomId);
+      
+      // Always verify encryption succeeded
+      if (!verifyEncryption(encryptedFileName, file.name)) {
+        throw new Error("Encryption failed - file name cannot be saved unencrypted");
       }
 
       // Create share entry
