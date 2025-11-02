@@ -44,13 +44,21 @@ export function CreateRoomForm() {
     // Check if room name is already taken
     const { data: existingRoom } = await supabase
       .from("rooms")
-      .select("id")
+      .select("id, expires_at")
       .eq("id", finalRoomName)
       .maybeSingle();
 
     if (existingRoom) {
-      toast.error("Room name already taken. Please choose another.");
-      return;
+      // Check if room is expired - if so, cleanup and allow reuse
+      const isExpired = existingRoom.expires_at && new Date(existingRoom.expires_at) < new Date();
+      if (isExpired) {
+        // Call cleanup function to delete the expired room
+        await supabase.rpc('cleanup_expired_rooms');
+        // Room will be deleted, proceed with creation
+      } else {
+        toast.error("Room name already taken. Please choose another.");
+        return;
+      }
     }
 
     setCreating(true);

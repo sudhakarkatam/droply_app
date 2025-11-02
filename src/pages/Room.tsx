@@ -62,7 +62,10 @@ export default function Room() {
     }
 
     loadRoom();
-    subscribeToShares();
+    const cleanup = subscribeToShares();
+    
+    // Return cleanup function to unsubscribe when component unmounts or id changes
+    return cleanup;
   }, [id]);
 
   // Clear password only when navigating away from the room (not on refresh)
@@ -96,9 +99,11 @@ export default function Room() {
 
       setRoom(roomData);
 
-      // Check if room is expired
+      // Check if room is expired - cleanup and redirect
       if (roomData.expires_at && new Date(roomData.expires_at) < new Date()) {
-        toast.error("This room has expired");
+        // Cleanup the expired room
+        await supabase.rpc('cleanup_expired_rooms');
+        toast.error("This room has expired and has been removed");
         navigate("/");
         return;
       }
@@ -1197,10 +1202,7 @@ export default function Room() {
                           const decryptedContent = decryptedContentMap.get(share.id) || "";
                           return decryptedContent.toLowerCase().includes(query);
                         }
-                        // For files, don't filter by search (can add file name search later)
-                        if (share.type === "file") {
-                          return true; // Keep files when searching
-                        }
+                        // Exclude files from text-based search
                         return false;
                       }
                       

@@ -47,9 +47,11 @@ export function JoinRoomForm() {
         return;
       }
 
-      // Check if room is expired
+      // Check if room is expired - cleanup and inform user
       if (roomData.expires_at && new Date(roomData.expires_at) < new Date()) {
-        toast.error("This room has expired");
+        // Cleanup the expired room
+        await supabase.rpc('cleanup_expired_rooms');
+        toast.error("This room has expired and has been removed");
         setJoining(false);
         return;
       }

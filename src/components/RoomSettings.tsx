@@ -37,6 +37,7 @@ export function RoomSettings({
   const [permissions, setPermissions] = useState<"view" | "edit">(room?.permissions || "edit");
   const [expiry, setExpiry] = useState<string>("never");
   const [isSaving, setIsSaving] = useState(false);
+  const [showRemovePassword, setShowRemovePassword] = useState(false);
 
   // Calculate current expiry display - returns preset string or ISO date string
   const getExpiryDisplay = () => {
@@ -87,12 +88,16 @@ export function RoomSettings({
       } = {};
 
       // Handle password changes
+      // Only include password in updates if:
+      // 1. User entered a new password (to set or change), OR
+      // 2. User explicitly clicked to remove password (for password-protected rooms)
       if (newPassword.trim()) {
         updates.password = newPassword.trim();
-      } else if (isPasswordProtected && !newPassword.trim()) {
-        // Removing password
+      } else if (isPasswordProtected && showRemovePassword) {
+        // User explicitly chose to remove password
         updates.password = null;
       }
+      // If neither condition is true, don't include password in updates
 
       // Only update if changed
       if (permissions !== room?.permissions) {
@@ -137,6 +142,7 @@ export function RoomSettings({
       setIsEditing(false);
       setNewPassword("");
       setConfirmPassword("");
+      setShowRemovePassword(false);
       toast.success("Settings updated!");
     } catch (error) {
       console.error("Error updating settings:", error);
@@ -152,6 +158,7 @@ export function RoomSettings({
     setConfirmPassword("");
     setPermissions(room?.permissions || "edit");
     setExpiry(getExpiryDisplay());
+    setShowRemovePassword(false);
   };
 
   return (
@@ -217,30 +224,63 @@ export function RoomSettings({
               <Lock className="w-4 h-4" />
               {isPasswordProtected ? "Change Password" : "Set Password"}
             </Label>
-            <Input
-              id="password"
-              type="password"
-              placeholder={isPasswordProtected ? "Leave empty to remove password" : "Enter new password"}
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              className="bg-background/50"
-              maxLength={100}
-            />
-            {newPassword.trim() && (
-              <Input
-                type="password"
-                placeholder="Confirm password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                className="bg-background/50"
-                maxLength={100}
-              />
+            {isPasswordProtected && showRemovePassword ? (
+              <div className="space-y-2">
+                <p className="text-sm text-muted-foreground bg-orange-500/10 border border-orange-500/20 rounded-lg p-3">
+                  ✓ Password will be removed. All existing encrypted content will be automatically decrypted.
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setShowRemovePassword(false);
+                    setNewPassword("");
+                    setConfirmPassword("");
+                  }}
+                  className="w-full"
+                >
+                  Cancel - Keep Password
+                </Button>
+              </div>
+            ) : (
+              <>
+                <Input
+                  id="password"
+                  type="password"
+                  placeholder="Enter new password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="bg-background/50"
+                  maxLength={100}
+                />
+                {newPassword.trim() && (
+                  <Input
+                    type="password"
+                    placeholder="Confirm password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="bg-background/50"
+                    maxLength={100}
+                  />
+                )}
+                <p className="text-xs text-muted-foreground">
+                  {isPasswordProtected 
+                    ? "Change password or remove password protection"
+                    : "Password enables end-to-end encryption for your room"}
+                </p>
+                {isPasswordProtected && !showRemovePassword && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowRemovePassword(true)}
+                    className="w-full"
+                  >
+                    Remove Password Protection
+                  </Button>
+                )}
+              </>
             )}
-            <p className="text-xs text-muted-foreground">
-              {isPasswordProtected 
-                ? "Leave empty to remove password. All existing encrypted content will be automatically decrypted."
-                : "Password enables end-to-end encryption for your room"}
-            </p>
           </div>
 
           <div className="space-y-2">
