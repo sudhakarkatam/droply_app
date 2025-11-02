@@ -41,6 +41,8 @@ export default function Room() {
   const [copied, setCopied] = useState(false);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [decryptedContentMap, setDecryptedContentMap] = useState<Map<string, string>>(new Map());
+  const [deleteShareId, setDeleteShareId] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   useEffect(() => {
     if (!id) {
@@ -535,13 +537,19 @@ export default function Room() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const deleteShare = async (shareId: string) => {
+  const handleDeleteClick = (shareId: string) => {
     if (room?.permissions === "view") {
       toast.error("This room is view-only");
       return;
     }
+    setDeleteShareId(shareId);
+    setShowDeleteConfirm(true);
+  };
 
-    const { error } = await supabase.from("shares").delete().eq("id", shareId);
+  const deleteShare = async () => {
+    if (!deleteShareId) return;
+
+    const { error } = await supabase.from("shares").delete().eq("id", deleteShareId);
 
     if (error) {
       toast.error("Failed to delete share");
@@ -550,6 +558,9 @@ export default function Room() {
       // Reload room to update shares list (triggers FileUpload refreshTrigger)
       await loadRoom();
     }
+    
+    setShowDeleteConfirm(false);
+    setDeleteShareId(null);
   };
 
   const updateRoomSettings = async (updates: {
@@ -1031,20 +1042,20 @@ export default function Room() {
   }
 
   return (
-    <div className="min-h-screen py-8 px-4">
-      <div className="max-w-7xl mx-auto space-y-6">
+    <div className="min-h-screen py-4 sm:py-6 md:py-8 px-3 sm:px-4">
+      <div className="max-w-7xl mx-auto space-y-4 sm:space-y-6">
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="text-center space-y-4"
+          className="text-center space-y-2 sm:space-y-3 md:space-y-4"
         >
-          <h1 className="text-4xl font-bold text-gradient">Droply</h1>
-          <p className="text-muted-foreground">Share anything, instantly</p>
+          <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gradient">Droply</h1>
+          <p className="text-sm sm:text-base text-muted-foreground">Share anything, instantly</p>
 
-          <Card className="glass-card p-4 flex items-center justify-center gap-4 flex-wrap">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Clock className="w-4 h-4" />
+          <Card className="glass-card p-3 sm:p-4 flex items-center justify-center gap-2 sm:gap-4 flex-wrap">
+            <div className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground">
+              <Clock className="w-3 h-3 sm:w-4 sm:h-4" />
               {room?.expires_at ? (
                 <span>Expires {formatDistanceToNow(new Date(room.expires_at), { addSuffix: true })}</span>
               ) : (
@@ -1055,21 +1066,21 @@ export default function Room() {
         </motion.div>
 
         {/* Split View Layout - Larger content area */}
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 sm:gap-6">
           {/* Left Side: Share Content with Tabs + Settings */}
           <motion.div
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.1 }}
-            className="lg:col-span-2 space-y-4"
+            className="lg:col-span-2 space-y-3 sm:space-y-4"
           >
             {/* Actions: Copy Link and Edit Settings */}
-            <div className="flex gap-2 flex-wrap">
-              <Button onClick={copyRoomLink} variant="outline" size="sm" className="gap-2 flex-1 sm:flex-initial">
-                {copied ? <CheckCircle2 className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+            <div className="flex flex-col sm:flex-row gap-2 sm:gap-2">
+              <Button onClick={copyRoomLink} variant="outline" size="sm" className="gap-2 w-full sm:w-auto sm:flex-initial text-xs sm:text-sm justify-center sm:justify-start">
+                {copied ? <CheckCircle2 className="w-3 h-3 sm:w-4 sm:h-4" /> : <Copy className="w-3 h-3 sm:w-4 sm:h-4" />}
                 {copied ? "Copied!" : "Copy Link"}
               </Button>
-              <div className="flex-1 sm:flex-initial">
+              <div className="w-full sm:w-auto sm:flex-initial">
                 <RoomSettings 
                   room={room} 
                   isPasswordProtected={!!room?.password}
@@ -1082,48 +1093,48 @@ export default function Room() {
               </div>
             </div>
 
-            <h2 className="text-xl font-bold mb-4">Share Content</h2>
+            <h2 className="text-lg sm:text-xl font-bold mb-3 sm:mb-4">Share Content</h2>
             
             {/* Share Content Tabs */}
-            <Card className="glass-card p-6">
+            <Card className="glass-card p-3 sm:p-4 md:p-6">
               <Tabs value={shareContentTab} onValueChange={setShareContentTab} className="w-full">
-                <TabsList className="grid w-full grid-cols-4 bg-background/50 mb-4">
-                  <TabsTrigger value="text" className="gap-2">
-                    <FileText className="w-4 h-4" />
+                <TabsList className="grid w-full grid-cols-4 bg-background/50 mb-3 sm:mb-4 h-auto">
+                  <TabsTrigger value="text" className="gap-1 sm:gap-2 text-xs sm:text-sm py-2 sm:py-2.5">
+                    <FileText className="w-3 h-3 sm:w-4 sm:h-4" />
                     <span className="hidden sm:inline">Text</span>
                   </TabsTrigger>
-                  <TabsTrigger value="file" className="gap-2">
-                    <Upload className="w-4 h-4" />
+                  <TabsTrigger value="file" className="gap-1 sm:gap-2 text-xs sm:text-sm py-2 sm:py-2.5">
+                    <Upload className="w-3 h-3 sm:w-4 sm:h-4" />
                     <span className="hidden sm:inline">File</span>
                   </TabsTrigger>
-                  <TabsTrigger value="code" className="gap-2">
-                    <Code className="w-4 h-4" />
+                  <TabsTrigger value="code" className="gap-1 sm:gap-2 text-xs sm:text-sm py-2 sm:py-2.5">
+                    <Code className="w-3 h-3 sm:w-4 sm:h-4" />
                     <span className="hidden sm:inline">Code</span>
                   </TabsTrigger>
-                  <TabsTrigger value="link" className="gap-2">
-                    <Link2 className="w-4 h-4" />
+                  <TabsTrigger value="link" className="gap-1 sm:gap-2 text-xs sm:text-sm py-2 sm:py-2.5">
+                    <Link2 className="w-3 h-3 sm:w-4 sm:h-4" />
                     <span className="hidden sm:inline">Link</span>
                   </TabsTrigger>
                 </TabsList>
 
-                <TabsContent value="text" className="space-y-4">
+                <TabsContent value="text" className="space-y-3 sm:space-y-4 mt-3 sm:mt-4">
                   <div>
-                    <Label className="mb-2 block">Share Text</Label>
+                    <Label className="mb-2 block text-sm sm:text-base">Share Text</Label>
                     <Textarea
                       value={text}
                       onChange={(e) => setText(e.target.value)}
                       placeholder="Paste your text here..."
-                      className="min-h-32 bg-background/50"
+                      className="min-h-24 sm:min-h-32 bg-background/50 text-sm sm:text-base"
                     />
                   </div>
-                  <Button onClick={handleShareText} className="w-full gradient-warm" disabled={room?.permissions === "view"}>
+                  <Button onClick={handleShareText} className="w-full gradient-warm text-sm sm:text-base" disabled={room?.permissions === "view"}>
                     Share Text
                   </Button>
                 </TabsContent>
 
-                <TabsContent value="file" className="space-y-4">
+                <TabsContent value="file" className="space-y-3 sm:space-y-4 mt-3 sm:mt-4">
                   <div>
-                    <Label className="mb-2 block">Upload File</Label>
+                    <Label className="mb-2 block text-sm sm:text-base">Upload File</Label>
                     <FileUpload 
                       roomId={id!} 
                       onUploadComplete={loadRoom}
@@ -1135,9 +1146,9 @@ export default function Room() {
                   </div>
                 </TabsContent>
 
-                <TabsContent value="code" className="space-y-4">
+                <TabsContent value="code" className="space-y-3 sm:space-y-4 mt-3 sm:mt-4">
                   <div>
-                    <Label className="mb-2 block">Share Code Snippet</Label>
+                    <Label className="mb-2 block text-sm sm:text-base">Share Code Snippet</Label>
                     <CodeSnippetUpload 
                       onShare={handleShareCode}
                       disabled={room?.permissions === "view"}
@@ -1145,17 +1156,17 @@ export default function Room() {
                   </div>
                 </TabsContent>
 
-                <TabsContent value="link" className="space-y-4">
+                <TabsContent value="link" className="space-y-3 sm:space-y-4 mt-3 sm:mt-4">
                   <div>
-                    <Label className="mb-2 block">Share URL</Label>
+                    <Label className="mb-2 block text-sm sm:text-base">Share URL</Label>
                     <Input
                       value={url}
                       onChange={(e) => setUrl(e.target.value)}
                       placeholder="https://example.com"
-                      className="bg-background/50"
+                      className="bg-background/50 text-sm sm:text-base"
                     />
                   </div>
-                  <Button onClick={handleShareUrl} className="w-full gradient-warm" disabled={room?.permissions === "view"}>
+                  <Button onClick={handleShareUrl} className="w-full gradient-warm text-sm sm:text-base" disabled={room?.permissions === "view"}>
                     Share URL
                   </Button>
                 </TabsContent>
@@ -1168,19 +1179,19 @@ export default function Room() {
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.2 }}
-            className="lg:col-span-3 space-y-4"
+            className="lg:col-span-3 space-y-3 sm:space-y-4"
           >
-            <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
-              <h2 className="text-xl font-bold">Content</h2>
+            <div className="flex items-center justify-between mb-3 sm:mb-4 flex-wrap gap-2 sm:gap-3">
+              <h2 className="text-lg sm:text-xl font-bold">Content</h2>
               {/* Search Input */}
-              <div className="relative w-full sm:w-auto sm:min-w-[250px]">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <div className="relative w-full sm:w-auto sm:min-w-[200px] lg:min-w-[250px]">
+                <Search className="absolute left-2 sm:left-3 top-1/2 transform -translate-y-1/2 w-3 h-3 sm:w-4 sm:h-4 text-muted-foreground" />
                 <Input
                   type="text"
-                  placeholder="Search text, code, links..."
+                  placeholder="Search..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9 pr-9 bg-background/50"
+                  className="pl-7 sm:pl-9 pr-8 sm:pr-9 bg-background/50 text-sm sm:text-base h-9 sm:h-10"
                 />
                 {searchQuery && (
                   <Button
@@ -1197,54 +1208,54 @@ export default function Room() {
             
             {decryptedShares.length > 0 ? (
               <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                <TabsList className="grid w-full grid-cols-5 bg-background/50">
-                  <TabsTrigger value="all" className="gap-1 text-xs sm:text-sm">
-                    All
+                <TabsList className="grid w-full grid-cols-5 bg-background/50 h-auto overflow-x-auto">
+                  <TabsTrigger value="all" className="gap-1 text-[10px] xs:text-xs sm:text-sm py-2 sm:py-2.5">
+                    <span className="truncate">All</span>
                     {shareCounts.all > 0 && (
-                      <Badge variant="secondary" className="ml-1 text-xs px-1.5 py-0">
+                      <Badge variant="secondary" className="ml-0.5 sm:ml-1 text-[9px] xs:text-xs px-1 sm:px-1.5 py-0">
                         {shareCounts.all}
                       </Badge>
                     )}
                   </TabsTrigger>
-                  <TabsTrigger value="files" className="gap-1 text-xs sm:text-sm">
-                    <File className="w-3 h-3 sm:w-4 sm:h-4" />
+                  <TabsTrigger value="files" className="gap-0.5 sm:gap-1 text-[10px] xs:text-xs sm:text-sm py-2 sm:py-2.5">
+                    <File className="w-2.5 h-2.5 xs:w-3 xs:h-3 sm:w-4 sm:h-4 shrink-0" />
                     <span className="hidden sm:inline">Files</span>
                     {shareCounts.files > 0 && (
-                      <Badge variant="secondary" className="ml-1 text-xs px-1.5 py-0">
+                      <Badge variant="secondary" className="ml-0.5 sm:ml-1 text-[9px] xs:text-xs px-1 sm:px-1.5 py-0">
                         {shareCounts.files}
                       </Badge>
                     )}
                   </TabsTrigger>
-                  <TabsTrigger value="code" className="gap-1 text-xs sm:text-sm">
-                    <Code className="w-3 h-3 sm:w-4 sm:h-4" />
+                  <TabsTrigger value="code" className="gap-0.5 sm:gap-1 text-[10px] xs:text-xs sm:text-sm py-2 sm:py-2.5">
+                    <Code className="w-2.5 h-2.5 xs:w-3 xs:h-3 sm:w-4 sm:h-4 shrink-0" />
                     <span className="hidden sm:inline">Code</span>
                     {shareCounts.code > 0 && (
-                      <Badge variant="secondary" className="ml-1 text-xs px-1.5 py-0">
+                      <Badge variant="secondary" className="ml-0.5 sm:ml-1 text-[9px] xs:text-xs px-1 sm:px-1.5 py-0">
                         {shareCounts.code}
                       </Badge>
                     )}
                   </TabsTrigger>
-                  <TabsTrigger value="links" className="gap-1 text-xs sm:text-sm">
-                    <Link2 className="w-3 h-3 sm:w-4 sm:h-4" />
+                  <TabsTrigger value="links" className="gap-0.5 sm:gap-1 text-[10px] xs:text-xs sm:text-sm py-2 sm:py-2.5">
+                    <Link2 className="w-2.5 h-2.5 xs:w-3 xs:h-3 sm:w-4 sm:h-4 shrink-0" />
                     <span className="hidden sm:inline">Links</span>
                     {shareCounts.links > 0 && (
-                      <Badge variant="secondary" className="ml-1 text-xs px-1.5 py-0">
+                      <Badge variant="secondary" className="ml-0.5 sm:ml-1 text-[9px] xs:text-xs px-1 sm:px-1.5 py-0">
                         {shareCounts.links}
                       </Badge>
                     )}
                   </TabsTrigger>
-                  <TabsTrigger value="text" className="gap-1 text-xs sm:text-sm">
-                    <FileText className="w-3 h-3 sm:w-4 sm:h-4" />
+                  <TabsTrigger value="text" className="gap-0.5 sm:gap-1 text-[10px] xs:text-xs sm:text-sm py-2 sm:py-2.5">
+                    <FileText className="w-2.5 h-2.5 xs:w-3 xs:h-3 sm:w-4 sm:h-4 shrink-0" />
                     <span className="hidden sm:inline">Text</span>
                     {shareCounts.text > 0 && (
-                      <Badge variant="secondary" className="ml-1 text-xs px-1.5 py-0">
+                      <Badge variant="secondary" className="ml-0.5 sm:ml-1 text-[9px] xs:text-xs px-1 sm:px-1.5 py-0">
                         {shareCounts.text}
                       </Badge>
                     )}
                   </TabsTrigger>
                 </TabsList>
 
-                <TabsContent value={activeTab} className="mt-4">
+                <TabsContent value={activeTab} className="mt-3 sm:mt-4">
                   {(() => {
                     const filteredShares = shares.filter((share) => {
                       // Filter by tab type
@@ -1275,30 +1286,30 @@ export default function Room() {
 
                     if (filteredShares.length === 0) {
                       return (
-                        <Card className="glass-card p-12 text-center">
+                        <Card className="glass-card p-6 sm:p-8 md:p-12 text-center">
                           {searchQuery.trim() ? (
-                            <p className="text-muted-foreground">
+                            <p className="text-sm sm:text-base text-muted-foreground">
                               No content found matching "{searchQuery}"
                             </p>
                           ) : (
-                            <p className="text-muted-foreground">No content in this category.</p>
+                            <p className="text-sm sm:text-base text-muted-foreground">No content in this category.</p>
                           )}
                         </Card>
                       );
                     }
 
                     return (
-                      <div className="space-y-4">
+                      <div className="space-y-3 sm:space-y-4">
                         {filteredShares.map((share) => (
-                        <Card key={share.id} className="glass-card p-6 relative group">
+                        <Card key={share.id} className="glass-card p-3 sm:p-4 md:p-6 relative group">
                           {room?.permissions === "edit" && (
                             <Button
-                              onClick={() => deleteShare(share.id)}
+                              onClick={() => handleDeleteClick(share.id)}
                               variant="ghost"
                               size="sm"
-                              className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity"
+                              className="absolute top-2 right-2 sm:top-3 sm:right-3 md:top-4 md:right-4 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity h-7 w-7 sm:h-8 sm:w-8 p-0"
                             >
-                              <Trash2 className="w-4 h-4 text-destructive" />
+                              <Trash2 className="w-3 h-3 sm:w-4 sm:h-4 text-destructive" />
                             </Button>
                           )}
                           <ShareDisplay 
@@ -1306,7 +1317,7 @@ export default function Room() {
                           encryptionKey={encryptionKey}
                           isPasswordKey={isPasswordKey}
                           canDelete={room?.permissions === "edit"}
-                          onDelete={() => deleteShare(share.id)}
+                          onDelete={() => handleDeleteClick(share.id)}
                           oldEncryptionKeys={oldEncryptionKeys}
                           isPasswordProtected={!!room?.password}
                           roomId={id || undefined}
@@ -1319,13 +1330,39 @@ export default function Room() {
                 </TabsContent>
               </Tabs>
             ) : (
-              <Card className="glass-card p-12 text-center">
-                <p className="text-muted-foreground">No content shared yet. Start sharing above!</p>
+              <Card className="glass-card p-6 sm:p-8 md:p-12 text-center">
+                <p className="text-sm sm:text-base text-muted-foreground">No content shared yet. Start sharing above!</p>
               </Card>
             )}
           </motion.div>
         </div>
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <AlertDialogContent className="glass-card">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Shared Content?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete the shared content from the room.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+            <AlertDialogCancel onClick={() => {
+              setShowDeleteConfirm(false);
+              setDeleteShareId(null);
+            }} className="w-full sm:w-auto">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={deleteShare}
+              className="w-full sm:w-auto bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

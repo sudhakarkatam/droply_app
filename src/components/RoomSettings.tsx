@@ -164,34 +164,38 @@ export function RoomSettings({
   };
 
   return (
-    <Card className="glass-card p-4">
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div className="flex items-center gap-3">
-          <Settings className="w-4 h-4 text-muted-foreground" />
-          <div className="flex flex-wrap gap-2">
+    <Card className="glass-card p-3 sm:p-4">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-2 md:gap-4">
+        <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0 w-full sm:w-auto">
+          <Settings className="w-3 h-3 sm:w-4 sm:h-4 text-muted-foreground shrink-0 mt-0.5" />
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 min-w-0 flex-1">
             {room?.permissions === "edit" ? (
-              <Badge variant="default" className="gap-1">
-                <Edit className="w-3 h-3" />
-                Edit Mode
+              <Badge variant="default" className="gap-1 text-[10px] xs:text-xs">
+                <Edit className="w-2.5 h-2.5 xs:w-3 xs:h-3" />
+                <span className="hidden xs:inline">Edit Mode</span>
+                <span className="xs:hidden">Edit</span>
               </Badge>
             ) : (
-              <Badge variant="secondary" className="gap-1">
-                <Eye className="w-3 h-3" />
-                View Only
+              <Badge variant="secondary" className="gap-1 text-[10px] xs:text-xs">
+                <Eye className="w-2.5 h-2.5 xs:w-3 xs:h-3" />
+                <span className="hidden xs:inline">View Only</span>
+                <span className="xs:hidden">View</span>
               </Badge>
             )}
             
             {isPasswordProtected && (
-              <Badge variant="default" className="gap-1">
-                <Shield className="w-3 h-3" />
-                Password Protected
+              <Badge variant="default" className="gap-1 text-[10px] xs:text-xs">
+                <Shield className="w-2.5 h-2.5 xs:w-3 xs:h-3" />
+                <span className="hidden sm:inline">Password Protected</span>
+                <span className="sm:hidden">Protected</span>
               </Badge>
             )}
             
             {isEncrypted && (
-              <Badge variant="default" className="gap-1 bg-green-500/10 text-green-500 border-green-500/20">
-                <Key className="w-3 h-3" />
-                End-to-End Encrypted
+              <Badge variant="default" className="gap-1 text-[10px] xs:text-xs bg-green-500/10 text-green-500 border-green-500/20">
+                <Key className="w-2.5 h-2.5 xs:w-3 xs:h-3" />
+                <span className="hidden sm:inline">Encrypted</span>
+                <span className="sm:hidden">E2E</span>
               </Badge>
             )}
           </div>
@@ -202,17 +206,17 @@ export function RoomSettings({
             variant="outline"
             size="sm"
             onClick={() => setIsEditing(!isEditing)}
-            className="gap-2"
+            className="gap-1 sm:gap-2 text-xs sm:text-sm shrink-0 w-full sm:w-auto justify-center sm:justify-start"
           >
             {isEditing ? (
               <>
-                <ChevronUp className="w-4 h-4" />
-                Hide Settings
+                <ChevronUp className="w-3 h-3 sm:w-4 sm:h-4" />
+                <span>Hide Settings</span>
               </>
             ) : (
               <>
-                <ChevronDown className="w-4 h-4" />
-                Edit Settings
+                <ChevronDown className="w-3 h-3 sm:w-4 sm:h-4" />
+                <span>Edit Settings</span>
               </>
             )}
           </Button>
@@ -220,10 +224,10 @@ export function RoomSettings({
       </div>
 
       {isEditing && isCreator && (
-        <div className="mt-4 pt-4 border-t border-border space-y-4">
+        <div className="mt-3 sm:mt-4 pt-3 sm:pt-4 border-t border-border space-y-3 sm:space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="password" className="flex items-center gap-2">
-              <Lock className="w-4 h-4" />
+            <Label htmlFor="password" className="flex items-center gap-2 text-sm sm:text-base">
+              <Lock className="w-3 h-3 sm:w-4 sm:h-4" />
               {isPasswordProtected ? "Change Password" : "Set Password"}
             </Label>
             {isPasswordProtected && showRemovePassword ? (
@@ -265,7 +269,7 @@ export function RoomSettings({
                     maxLength={100}
                   />
                 )}
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs sm:text-sm text-muted-foreground">
                   {isPasswordProtected 
                     ? "Change password or remove password protection"
                     : "Password enables end-to-end encryption for your room"}
@@ -286,8 +290,8 @@ export function RoomSettings({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="permissions" className="flex items-center gap-2">
-              {permissions === "edit" ? <Edit className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            <Label htmlFor="permissions" className="flex items-center gap-2 text-sm sm:text-base">
+              {permissions === "edit" ? <Edit className="w-3 h-3 sm:w-4 sm:h-4" /> : <Eye className="w-3 h-3 sm:w-4 sm:h-4" />}
               Room Permissions
             </Label>
             <Select value={permissions} onValueChange={(v) => setPermissions(v as "view" | "edit")}>
@@ -317,11 +321,11 @@ export function RoomSettings({
             label="Room Expiry"
           />
 
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-col sm:flex-row">
             <Button
               onClick={handleSave}
               disabled={isSaving}
-              className="flex-1 gradient-warm"
+              className="flex-1 gradient-warm text-sm sm:text-base"
             >
               {isSaving ? "Saving..." : "Save Changes"}
             </Button>
@@ -329,7 +333,7 @@ export function RoomSettings({
               onClick={handleCancel}
               variant="outline"
               disabled={isSaving}
-              className="flex-1"
+              className="flex-1 text-sm sm:text-base"
             >
               Cancel
             </Button>

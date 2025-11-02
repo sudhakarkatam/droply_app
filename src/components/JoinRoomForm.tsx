@@ -79,10 +79,10 @@ export function JoinRoomForm() {
       transition={{ delay: 0.4 }}
       className="max-w-md mx-auto"
     >
-      <Card className="glass-card p-8 space-y-6">
+      <Card className="glass-card p-4 sm:p-6 md:p-8 space-y-4 sm:space-y-6">
         <div className="text-center space-y-2">
-          <h2 className="text-2xl font-bold">Join a Room</h2>
-          <p className="text-sm text-muted-foreground">
+          <h2 className="text-xl sm:text-2xl font-bold">Join a Room</h2>
+          <p className="text-xs sm:text-sm text-muted-foreground">
             Enter the room ID to access shared content
           </p>
         </div>

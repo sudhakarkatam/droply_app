@@ -26,17 +26,17 @@ export function PasswordDialog({ open, onPasswordSubmit, onCancel }: PasswordDia
 
   return (
     <Dialog open={open} onOpenChange={(open) => !open && onCancel()}>
-      <DialogContent className="glass-card">
+      <DialogContent className="glass-card p-4 sm:p-6">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Lock className="w-5 h-5 text-primary" />
+          <DialogTitle className="flex items-center gap-2 text-lg sm:text-xl">
+            <Lock className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
             Password Protected Room
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="text-sm">
             This room is password protected. Please enter the password to access it.
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
           <div className="space-y-2">
             <Input
               type="password"
@@ -46,16 +46,16 @@ export function PasswordDialog({ open, onPasswordSubmit, onCancel }: PasswordDia
                 setPassword(e.target.value);
                 setError("");
               }}
-              className="bg-background/50"
+              className="bg-background/50 text-sm sm:text-base"
               autoFocus
             />
-            {error && <p className="text-sm text-destructive">{error}</p>}
+            {error && <p className="text-xs sm:text-sm text-destructive">{error}</p>}
           </div>
-          <div className="flex gap-2 justify-end">
-            <Button type="button" variant="outline" onClick={onCancel}>
+          <div className="flex gap-2 justify-end flex-col sm:flex-row">
+            <Button type="button" variant="outline" onClick={onCancel} className="w-full sm:w-auto text-sm sm:text-base">
               Cancel
             </Button>
-            <Button type="submit" className="gradient-warm">
+            <Button type="submit" className="gradient-warm w-full sm:w-auto text-sm sm:text-base">
               Unlock Room
             </Button>
           </div>

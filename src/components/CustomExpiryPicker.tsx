@@ -168,7 +168,7 @@ export function CustomExpiryPicker({ value, onChange, label, className }: Custom
               )}
             </Button>
           </PopoverTrigger>
-          <PopoverContent className="w-auto p-0" align="start">
+          <PopoverContent className="w-auto p-0 sm:p-2" align="start">
             <Calendar
               mode="single"
               selected={selectedDate}
@@ -181,10 +181,10 @@ export function CustomExpiryPicker({ value, onChange, label, className }: Custom
               initialFocus
             />
             {selectedDate && (
-              <div className="p-3 border-t space-y-3">
-                <div className="flex items-center gap-2 text-sm">
-                  <Label htmlFor="time-picker" className="flex items-center gap-2 text-sm font-normal">
-                    <Clock className="h-4 w-4" />
+              <div className="p-2 sm:p-3 border-t space-y-2 sm:space-y-3">
+                <div className="flex items-center gap-2 text-xs sm:text-sm flex-wrap">
+                  <Label htmlFor="time-picker" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm font-normal">
+                    <Clock className="h-3 w-3 sm:h-4 sm:w-4" />
                     Time:
                   </Label>
                   <Input
@@ -192,10 +192,10 @@ export function CustomExpiryPicker({ value, onChange, label, className }: Custom
                     type="time"
                     value={selectedTime}
                     onChange={(e) => handleTimeChange(e.target.value)}
-                    className="w-auto"
+                    className="w-auto text-xs sm:text-sm"
                   />
                 </div>
-                <div className="text-xs text-muted-foreground">
+                <div className="text-[10px] xs:text-xs text-muted-foreground">
                   Expires on {format(selectedDate, "PPP 'at' h:mm a")}
                 </div>
               </div>

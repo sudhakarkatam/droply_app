@@ -36,19 +36,19 @@ export default function Index() {
   return (
     <div className="min-h-screen">
       {/* Hero Section */}
-      <div className="max-w-6xl mx-auto px-4 py-20">
+      <div className="max-w-6xl mx-auto px-4 py-8 sm:py-12 md:py-20">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="text-center space-y-8"
+          className="text-center space-y-4 sm:space-y-6 md:space-y-8"
         >
           {/* Logo & Tagline */}
-          <div className="space-y-4">
+          <div className="space-y-2 sm:space-y-3 md:space-y-4">
             <motion.h1
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ delay: 0.2 }}
-              className="text-7xl font-bold text-gradient"
+              className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold text-gradient"
             >
               Droply
             </motion.h1>
@@ -56,7 +56,7 @@ export default function Index() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.3 }}
-              className="text-2xl text-muted-foreground"
+              className="text-base sm:text-lg md:text-xl lg:text-2xl text-muted-foreground px-2"
             >
               Knowledge Drop — Unlock Your Brain One Byte at a Time
             </motion.p>
@@ -70,15 +70,15 @@ export default function Index() {
               transition={{ delay: 0.4 }}
               className="flex flex-col items-center gap-4"
             >
-              <div className="flex gap-4 flex-wrap justify-center">
+              <div className="flex gap-3 sm:gap-4 flex-wrap justify-center">
                 <Button
                   onClick={() => {
                     setFormMode("create");
                     setShowForm(true);
                   }}
-                  className="text-lg px-8 py-6 gradient-warm glow-orange hover:scale-105 transition-transform"
+                  className="text-sm sm:text-base md:text-lg px-6 sm:px-8 py-4 sm:py-5 md:py-6 gradient-warm glow-orange hover:scale-105 transition-transform"
                 >
-                  <Plus className="w-5 h-5 mr-2" />
+                  <Plus className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
                   Create Room
                 </Button>
                 <Button
@@ -87,9 +87,9 @@ export default function Index() {
                     setShowForm(true);
                   }}
                   variant="outline"
-                  className="text-lg px-8 py-6 hover:scale-105 transition-transform"
+                  className="text-sm sm:text-base md:text-lg px-6 sm:px-8 py-4 sm:py-5 md:py-6 hover:scale-105 transition-transform"
                 >
-                  <LogIn className="w-5 h-5 mr-2" />
+                  <LogIn className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
                   Join Room
                 </Button>
               </div>
@@ -134,10 +134,10 @@ export default function Index() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.5 }}
-            className="max-w-3xl mx-auto mt-16"
+            className="max-w-3xl mx-auto mt-8 sm:mt-12 md:mt-16"
           >
-            <Card className="glass-card p-8">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-center">
+            <Card className="glass-card p-4 sm:p-6 md:p-8">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6 text-center">
                 <div className="space-y-3">
                   <div className="w-12 h-12 mx-auto rounded-full bg-primary/20 flex items-center justify-center">
                     <Upload className="w-6 h-6 text-primary" />
@@ -175,7 +175,7 @@ export default function Index() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.6 }}
-          className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-20"
+          className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 mt-10 sm:mt-16 md:mt-20"
         >
           {features.map((feature, index) => (
             <motion.div
@@ -184,14 +184,14 @@ export default function Index() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.7 + index * 0.1 }}
             >
-              <Card className="glass-card p-6 h-full hover:glow-orange transition-all duration-300">
-                <div className="flex items-start gap-4">
-                  <div className="w-12 h-12 rounded-lg bg-primary/20 flex items-center justify-center shrink-0">
-                    <feature.icon className="w-6 h-6 text-primary" />
+              <Card className="glass-card p-4 sm:p-5 md:p-6 h-full hover:glow-orange transition-all duration-300">
+                <div className="flex items-start gap-3 sm:gap-4">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-primary/20 flex items-center justify-center shrink-0">
+                    <feature.icon className="w-5 h-5 sm:w-6 sm:h-6 text-primary" />
                   </div>
-                  <div className="space-y-2">
-                    <h3 className="text-xl font-semibold">{feature.title}</h3>
-                    <p className="text-muted-foreground">{feature.description}</p>
+                  <div className="space-y-1 sm:space-y-2">
+                    <h3 className="text-lg sm:text-xl font-semibold">{feature.title}</h3>
+                    <p className="text-sm sm:text-base text-muted-foreground">{feature.description}</p>
                   </div>
                 </div>
               </Card>
@@ -205,18 +205,18 @@ export default function Index() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 1 }}
-            className="text-center mt-20 space-y-6"
+            className="text-center mt-10 sm:mt-16 md:mt-20 space-y-4 sm:space-y-6"
           >
-            <h2 className="text-3xl font-bold">Ready to drop some knowledge?</h2>
-            <div className="flex gap-4 justify-center flex-wrap">
+            <h2 className="text-2xl sm:text-3xl font-bold px-4">Ready to drop some knowledge?</h2>
+            <div className="flex gap-3 sm:gap-4 justify-center flex-wrap px-4">
               <Button
                 onClick={() => {
                   setFormMode("create");
                   setShowForm(true);
                 }}
-                className="px-8 py-4 gradient-warm glow-yellow hover:scale-105 transition-transform"
+                className="px-6 sm:px-8 py-3 sm:py-4 text-sm sm:text-base gradient-warm glow-yellow hover:scale-105 transition-transform"
               >
-                <Plus className="w-5 h-5 mr-2" />
+                <Plus className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
                 Create Room
               </Button>
               <Button
@@ -225,9 +225,9 @@ export default function Index() {
                   setShowForm(true);
                 }}
                 variant="outline"
-                className="px-8 py-4 hover:scale-105 transition-transform"
+                className="px-6 sm:px-8 py-3 sm:py-4 text-sm sm:text-base hover:scale-105 transition-transform"
               >
-                <LogIn className="w-5 h-5 mr-2" />
+                <LogIn className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
                 Join Room
               </Button>
             </div>

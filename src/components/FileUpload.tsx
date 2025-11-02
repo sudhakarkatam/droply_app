@@ -143,7 +143,7 @@ export function FileUpload({ roomId, onUploadComplete, encryptionKey, isPassword
   };
 
   return (
-    <div className="border-2 border-dashed border-border rounded-lg p-8 text-center hover:border-primary/50 transition-colors">
+    <div className="border-2 border-dashed border-border rounded-lg p-4 sm:p-6 md:p-8 text-center hover:border-primary/50 transition-colors">
       <input
         type="file"
         id="file-upload"
@@ -152,18 +152,18 @@ export function FileUpload({ roomId, onUploadComplete, encryptionKey, isPassword
         disabled={uploading || disabled}
       />
       <label htmlFor="file-upload" className="cursor-pointer">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
-            <Upload className="w-8 h-8 text-primary" />
+        <div className="flex flex-col items-center gap-3 sm:gap-4">
+          <div className="w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 rounded-full bg-primary/10 flex items-center justify-center">
+            <Upload className="w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 text-primary" />
           </div>
           <div>
-            <p className="text-sm font-medium">
+            <p className="text-xs sm:text-sm font-medium">
               {uploading ? "Uploading..." : "Click to upload or drag and drop"}
             </p>
-            <p className="text-xs text-muted-foreground mt-1">
+            <p className="text-[10px] xs:text-xs text-muted-foreground mt-1 px-2">
               Max file: 10MB • Room limit: 20MB total
               {remainingSpace < MAX_TOTAL_FILE_SIZE && (
-                <span className="ml-2 text-primary">
+                <span className="block xs:inline xs:ml-2 text-primary">
                   ({(remainingSpace / (1024 * 1024)).toFixed(2)}MB remaining)
                 </span>
               )}

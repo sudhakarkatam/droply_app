@@ -44,11 +44,11 @@ export function CodeSnippetUpload({ onShare, disabled }: CodeSnippetUploadProps)
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3 sm:space-y-4">
       <div className="space-y-2">
-        <Label htmlFor="language">Language</Label>
+        <Label htmlFor="language" className="text-sm sm:text-base">Language</Label>
         <Select value={language} onValueChange={setLanguage}>
-          <SelectTrigger id="language" className="bg-background/50">
+          <SelectTrigger id="language" className="bg-background/50 text-sm sm:text-base">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -62,22 +62,22 @@ export function CodeSnippetUpload({ onShare, disabled }: CodeSnippetUploadProps)
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="code">Code</Label>
+        <Label htmlFor="code" className="text-sm sm:text-base">Code</Label>
         <Textarea
           id="code"
           value={code}
           onChange={(e) => setCode(e.target.value)}
           placeholder="Paste your code here..."
-          className="min-h-48 font-mono text-sm bg-background/50"
+          className="min-h-32 sm:min-h-40 md:min-h-48 font-mono text-xs sm:text-sm bg-background/50"
         />
       </div>
 
       <Button 
         onClick={handleShare} 
         disabled={disabled || !code.trim()}
-        className="w-full gradient-warm"
+        className="w-full gradient-warm text-sm sm:text-base"
       >
-        <Code className="w-4 h-4 mr-2" />
+        <Code className="w-3 h-3 sm:w-4 sm:h-4 mr-2" />
         Share Code Snippet
       </Button>
     </div>
