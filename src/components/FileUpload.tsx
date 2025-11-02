@@ -4,6 +4,7 @@ import { Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { encrypt, verifyEncryption, deriveKeyFromRoomId } from "@/lib/crypto";
+import { logger } from "@/lib/logger";
 
 interface FileUploadProps {
   roomId: string;
@@ -16,6 +17,43 @@ interface FileUploadProps {
 
 const MAX_TOTAL_FILE_SIZE = 20 * 1024 * 1024; // 20MB total limit per room
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB per file limit
+
+// Security: Allowed file types (MIME types)
+const ALLOWED_MIME_TYPES = [
+  // Images
+  'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml',
+  // Documents
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  // Text
+  'text/plain', 'text/csv', 'text/markdown',
+  // Archives
+  'application/zip', 'application/x-rar-compressed', 'application/x-7z-compressed',
+  // Audio/Video
+  'audio/mpeg', 'audio/mp3', 'audio/wav',
+  'video/mp4', 'video/mpeg', 'video/webm',
+];
+
+// Security: Dangerous file extensions to block
+const DANGEROUS_EXTENSIONS = [
+  '.exe', '.bat', '.cmd', '.com', '.scr', '.vbs', '.js', '.jsx', '.jar',
+  '.app', '.dmg', '.pkg', '.deb', '.rpm', '.sh', '.bash', '.ps1', '.psm1',
+  '.py', '.php', '.pl', '.rb', '.msi', '.bin', '.dll', '.sys', '.drv'
+];
+
+// Security: Allowed file extensions (whitelist)
+const ALLOWED_EXTENSIONS = [
+  '.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg',
+  '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+  '.txt', '.csv', '.md',
+  '.zip', '.rar', '.7z',
+  '.mp3', '.wav', '.mp4', '.webm'
+];
 
 export function FileUpload({ roomId, onUploadComplete, encryptionKey, isPasswordKey, disabled, refreshTrigger }: FileUploadProps) {
   const [uploading, setUploading] = useState(false);
@@ -37,7 +75,7 @@ export function FileUpload({ roomId, onUploadComplete, encryptionKey, isPassword
       setTotalFileSize(total);
       setRemainingSpace(Math.max(0, MAX_TOTAL_FILE_SIZE - total));
     } catch (error) {
-      console.error("Error fetching total file size:", error);
+      logger.error("Error fetching total file size:", error);
     }
   };
 
@@ -53,12 +91,45 @@ export function FileUpload({ roomId, onUploadComplete, encryptionKey, isPassword
 
     if (disabled) {
       toast.error("This room is view-only");
+      e.target.value = "";
+      return;
+    }
+
+    // Security: Validate file type (MIME type)
+    if (!ALLOWED_MIME_TYPES.includes(file.type)) {
+      toast.error(`File type "${file.type}" is not allowed. Please upload a document, image, or supported media file.`);
+      e.target.value = "";
+      return;
+    }
+
+    // Security: Validate file extension
+    const fileExt = '.' + (file.name.split('.').pop()?.toLowerCase() || '');
+    
+    // Check for dangerous extensions
+    if (DANGEROUS_EXTENSIONS.includes(fileExt)) {
+      toast.error(`File extension "${fileExt}" is not allowed for security reasons.`);
+      e.target.value = "";
+      return;
+    }
+
+    // Check if extension matches allowed list
+    if (!ALLOWED_EXTENSIONS.includes(fileExt)) {
+      toast.error(`File extension "${fileExt}" is not allowed.`);
+      e.target.value = "";
+      return;
+    }
+
+    // Validate extension format (only alphanumeric, no special chars)
+    if (!/^\.?[a-z0-9]+$/i.test(fileExt)) {
+      toast.error("Invalid file extension format.");
+      e.target.value = "";
       return;
     }
 
     // Check individual file size (10MB limit per file)
     if (file.size > MAX_FILE_SIZE) {
       toast.error("File size must be less than 10MB");
+      e.target.value = "";
       return;
     }
 
@@ -68,6 +139,7 @@ export function FileUpload({ roomId, onUploadComplete, encryptionKey, isPassword
       const usedMB = (totalFileSize / (1024 * 1024)).toFixed(2);
       const remainingMB = (remainingSpace / (1024 * 1024)).toFixed(2);
       toast.error(`Total file size limit (20MB) exceeded. Used: ${usedMB}MB, Remaining: ${remainingMB}MB`);
+      e.target.value = "";
       return;
     }
 
@@ -83,6 +155,7 @@ export function FileUpload({ roomId, onUploadComplete, encryptionKey, isPassword
     // Validate encryption for password-protected rooms
     if (finalIsPasswordKey && !finalEncryptionKey) {
       toast.error("Password required to encrypt file name");
+      e.target.value = "";
       return;
     }
 
@@ -90,8 +163,11 @@ export function FileUpload({ roomId, onUploadComplete, encryptionKey, isPassword
 
     try {
       // Upload to Supabase Storage
-      const fileExt = file.name.split(".").pop();
-      const fileName = `${roomId}/${Date.now()}.${fileExt}`;
+      // Sanitize file extension (remove leading dot, lowercase)
+      const sanitizedExt = fileExt.substring(1).toLowerCase();
+      // Sanitize file name to prevent path traversal
+      const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const fileName = `${roomId}/${Date.now()}_${sanitizedFileName.split('.').slice(0, -1).join('.')}.${sanitizedExt}`;
 
       const { error: uploadError } = await supabase.storage
         .from("droply-files")
@@ -134,7 +210,7 @@ export function FileUpload({ roomId, onUploadComplete, encryptionKey, isPassword
       // Refetch to ensure we have accurate data after any deletions
       await fetchTotalFileSize();
     } catch (error) {
-      console.error("Error uploading file:", error);
+      logger.error("Error uploading file:", error);
       toast.error("Failed to upload file");
     } finally {
       setUploading(false);

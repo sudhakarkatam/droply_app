@@ -11,6 +11,8 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { generateKey, hashPassword } from "@/lib/crypto";
 import { CustomExpiryPicker } from "@/components/CustomExpiryPicker";
+import { useRateLimit } from "@/hooks/useRateLimit";
+import { logger } from "@/lib/logger";
 
 export function CreateRoomForm() {
   const navigate = useNavigate();
@@ -19,6 +21,13 @@ export function CreateRoomForm() {
   const [permissions, setPermissions] = useState<"view" | "edit">("edit");
   const [expiry, setExpiry] = useState<string>("never");
   const [creating, setCreating] = useState(false);
+
+  // Rate limiting: Max 5 rooms per hour per user
+  const { checkRateLimit } = useRateLimit({
+    maxAttempts: 5,
+    windowMs: 60 * 60 * 1000, // 1 hour
+    errorMessage: 'Room creation rate limit exceeded',
+  });
 
   const generateRoomName = () => {
     const adjectives = ["swift", "bright", "cosmic", "quantum", "digital", "cyber"];
@@ -30,9 +39,27 @@ export function CreateRoomForm() {
   const handleCreate = async () => {
     const finalRoomName = roomName.trim() || generateRoomName();
     
+    // Check rate limit before proceeding
+    if (!checkRateLimit()) {
+      return;
+    }
+
+    // Enhanced security validation: Reserved names check
+    const reservedNames = ['admin', 'api', 'test', 'www', 'mail', 'root', 'system', 'support', 'help', 'login', 'logout', 'register', 'signup', 'signin'];
+    if (reservedNames.includes(finalRoomName.toLowerCase())) {
+      toast.error("This room name is reserved. Please choose another.");
+      return;
+    }
+    
     // Validate room name
     if (finalRoomName.length < 3) {
       toast.error("Room name must be at least 3 characters");
+      return;
+    }
+
+    // Require minimum length for custom names (security)
+    if (roomName.trim() && finalRoomName.length < 4) {
+      toast.error("Custom room names must be at least 4 characters");
       return;
     }
 
@@ -123,7 +150,7 @@ export function CreateRoomForm() {
         navigate(`/room/${finalRoomName}`);
       }, 300);
     } catch (error) {
-      console.error("Error creating room:", error);
+      logger.error("Error creating room:", error);
       toast.error("Failed to create room");
       setCreating(false);
     }

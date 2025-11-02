@@ -19,7 +19,7 @@ export default function Index() {
     {
       icon: Shield,
       title: "Privacy First",
-      description: "Your data expires automatically. Set custom expiry times or delete on first view.",
+      description: "Your data expires automatically. Set custom expiry times from 1 hour to never.",
     },
     {
       icon: Clock,
@@ -58,7 +58,7 @@ export default function Index() {
               transition={{ delay: 0.3 }}
               className="text-base sm:text-lg md:text-xl lg:text-2xl text-muted-foreground px-2"
             >
-              Knowledge Drop — Unlock Your Brain One Byte at a Time
+              Share Anything, Instantly
             </motion.p>
           </div>
 

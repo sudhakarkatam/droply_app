@@ -6,6 +6,8 @@
  * - Public rooms: Key deterministically derived from room ID using PBKDF2
  */
 
+import { logger } from "./logger";
+
 const SALT_LENGTH = 16;
 const IV_LENGTH = 12;
 const KEY_LENGTH = 256;
@@ -205,7 +207,7 @@ export async function decrypt(
     const decoder = new TextDecoder();
     return decoder.decode(decryptedBuffer);
   } catch (error) {
-    console.error("Decryption failed:", error);
+    logger.error("Decryption failed:", error);
     // Return original data if decryption fails (might be unencrypted)
     return encryptedData;
   }
@@ -253,13 +255,13 @@ export function isEncrypted(data: string): boolean {
 export function verifyEncryption(encryptedData: string, originalData: string): boolean {
   // Must be different from original
   if (encryptedData === originalData) {
-    console.error("verifyEncryption: Encrypted data equals original");
+    logger.error("verifyEncryption: Encrypted data equals original");
     return false;
   }
   
   // Must have encryption format (contains : separator)
   if (!isEncrypted(encryptedData)) {
-    console.error("verifyEncryption: Data doesn't have encryption format", { 
+    logger.error("verifyEncryption: Data doesn't have encryption format", { 
       hasColon: encryptedData.includes(":"),
       parts: encryptedData.split(":").length 
     });
@@ -281,7 +283,7 @@ export function verifyEncryption(encryptedData: string, originalData: string): b
   );
   
   if (!lengthCheck) {
-    console.error("verifyEncryption: Length check failed", {
+    logger.error("verifyEncryption: Length check failed", {
       originalLength: originalData.length,
       encryptedLength: encryptedData.length,
       requiredMin: Math.max(originalData.length * 1.2, minEncryptedLength),

@@ -19,6 +19,7 @@ import { CodeSnippetUpload } from "@/components/CodeSnippetUpload";
 import { RoomSettings } from "@/components/RoomSettings";
 import { encrypt, decrypt, hashPassword, generateKey, verifyEncryption, isEncrypted, deriveKeyFromRoomId } from "@/lib/crypto";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { logger } from "@/lib/logger";
 
 export default function Room() {
   const { id } = useParams();
@@ -210,7 +211,7 @@ export default function Room() {
 
       setShares(sharesData || []);
     } catch (error) {
-      console.error("Error loading room:", error);
+      logger.error("Error loading room:", error);
       toast.error("Failed to load room");
     } finally {
       setLoading(false);

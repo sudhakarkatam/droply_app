@@ -6,6 +6,7 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { decrypt, isEncrypted, deriveKeyFromRoomId } from "@/lib/crypto";
 import { useEffect, useState } from "react";
+import { logger } from "@/lib/logger";
 
 interface ShareDisplayProps {
   share: any;
@@ -49,7 +50,7 @@ export function ShareDisplay({ share, encryptionKey, isPasswordKey, canDelete, o
                 const roomIdKey = await deriveKeyFromRoomId(roomId);
                 keysToTry.push({ key: roomIdKey, isPasswordKey: false });
               } catch (error) {
-                console.error("Failed to derive room ID key for file name:", error);
+                logger.error("Failed to derive room ID key for file name:", error);
               }
             }
 
@@ -205,7 +206,7 @@ export function ShareDisplay({ share, encryptionKey, isPasswordKey, canDelete, o
                   setDecryptedContent(share.content);
                 } else {
                   // Genuine encryption failure
-                  console.error("Failed to decrypt content with all available keys", {
+                  logger.error("Failed to decrypt content with all available keys", {
                     shareId: share.id,
                     shareType: share.type,
                     keysTried: keysToTry.length,
@@ -234,7 +235,7 @@ export function ShareDisplay({ share, encryptionKey, isPasswordKey, canDelete, o
           setDecryptedContent("");
         }
       } catch (error) {
-        console.error("Unexpected error in decryptData:", error);
+        logger.error("Unexpected error in decryptData:", error);
         setDecryptedContent(share.content || share.file_name || "");
       } finally {
         setIsDecrypting(false);
@@ -282,14 +283,26 @@ export function ShareDisplay({ share, encryptionKey, isPasswordKey, canDelete, o
     return content.replace(/^```\w+\n/, "").replace(/\n```$/, "");
   };
 
+  // Security: Validate URL is HTTPS only
+  const isValidHttpsUrl = (url: string): boolean => {
+    try {
+      const parsed = new URL(url);
+      // Only allow HTTPS protocol (no HTTP, no javascript:, no data:, etc.)
+      return parsed.protocol === 'https:';
+    } catch {
+      return false;
+    }
+  };
+
   const makeLinksClickable = (text: string) => {
-    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    // Only match HTTPS URLs (not HTTP) for security
+    const urlRegex = /(https:\/\/[^\s]+)/g;
     const parts = text.split(urlRegex);
     
     return (
       <>
         {parts.map((part, index) => {
-          if (part.match(urlRegex)) {
+          if (part.match(urlRegex) && isValidHttpsUrl(part)) {
             return (
               <a
                 key={index}

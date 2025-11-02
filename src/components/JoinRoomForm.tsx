@@ -8,15 +8,29 @@ import { Label } from "@/components/ui/label";
 import { LogIn, Hash } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { useRateLimit } from "@/hooks/useRateLimit";
+import { logger } from "@/lib/logger";
 
 export function JoinRoomForm() {
   const navigate = useNavigate();
   const [roomId, setRoomId] = useState("");
   const [joining, setJoining] = useState(false);
 
+  // Rate limiting: Max 20 join attempts per 15 minutes
+  const { checkRateLimit } = useRateLimit({
+    maxAttempts: 20,
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    errorMessage: 'Too many join attempts',
+  });
+
   const handleJoin = async () => {
     const finalRoomId = roomId.trim().toLowerCase().replace(/[^a-z0-9-]/g, "");
     
+    // Check rate limit before proceeding
+    if (!checkRateLimit()) {
+      return;
+    }
+
     if (!finalRoomId || finalRoomId.length < 3) {
       toast.error("Please enter a valid room ID");
       return;
@@ -60,7 +74,7 @@ export function JoinRoomForm() {
       toast.success("Joining room...");
       navigate(`/room/${finalRoomId}`);
     } catch (error) {
-      console.error("Error joining room:", error);
+      logger.error("Error joining room:", error);
       toast.error("Failed to join room");
       setJoining(false);
     }
