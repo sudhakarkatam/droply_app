@@ -15,6 +15,7 @@ interface RoomSettingsProps {
   isPasswordProtected: boolean;
   isEncrypted: boolean;
   isCreator: boolean;
+  isActualCreator?: boolean; // Whether user is the actual creator (has creator token)
   onSettingsUpdate?: (updates: {
     password?: string | null;
     permissions?: "view" | "edit";
@@ -28,6 +29,7 @@ export function RoomSettings({
   isPasswordProtected, 
   isEncrypted, 
   isCreator,
+  isActualCreator = isCreator, // Default to isCreator if not specified
   onSettingsUpdate,
   onDeleteRoom 
 }: RoomSettingsProps) {

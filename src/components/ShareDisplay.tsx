@@ -135,8 +135,14 @@ export function ShareDisplay({ share, encryptionKey, isPasswordKey, canDelete, o
                   setDecryptedContent("[⚠️ Unable to decrypt content. Please enter the room password.]");
                 } else {
                   // Public room - content shouldn't be encrypted, but it is
-                  // This might be old content or an error - try to show as-is
-                  setDecryptedContent("[⚠️ Unable to decrypt content. This may be encrypted content from a previous password-protected state.]");
+                  // This might be encrypted with a URL fragment key that's not available
+                  // Show helpful message
+                  const hasHashInUrl = window.location.hash.length > 1;
+                  if (hasHashInUrl) {
+                    setDecryptedContent("[⚠️ Unable to decrypt content. The encryption key in the URL may be invalid or corrupted.]");
+                  } else {
+                    setDecryptedContent("[⚠️ Unable to decrypt content. This content was encrypted with a key that is not available. If this room previously had a password or encryption key in the URL, it may have been lost.]");
+                  }
                 }
               }
             } else {
@@ -186,7 +192,17 @@ export function ShareDisplay({ share, encryptionKey, isPasswordKey, canDelete, o
                     lastError: lastError,
                     contentPreview: share.content.substring(0, 100)
                   });
-                  setDecryptedContent("[⚠️ Unable to decrypt content. Please check your password or refresh the page.]");
+                  // Provide more helpful error message based on room type
+                  if (isPasswordProtected) {
+                    setDecryptedContent("[⚠️ Unable to decrypt content. Please verify you entered the correct password.]");
+                  } else {
+                    const hasHashInUrl = window.location.hash.length > 1;
+                    if (hasHashInUrl) {
+                      setDecryptedContent("[⚠️ Unable to decrypt content. The encryption key in the URL may be invalid. Try copying the room link again from the original source.]");
+                    } else {
+                      setDecryptedContent("[⚠️ Unable to decrypt content. This content requires an encryption key that is not available. If you created this on another device, the key may have been stored in that device's session.]");
+                    }
+                  }
                 }
               }
             }

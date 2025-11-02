@@ -50,9 +50,16 @@ export default function Room() {
 
     // Extract encryption key from URL fragment (for non-password rooms)
     const fragment = location.hash.substring(1);
-    if (fragment) {
-      setEncryptionKey(fragment);
-      sessionStorage.setItem(`room_key_${id}`, fragment);
+    if (fragment && fragment.trim().length > 0) {
+      // Validate that fragment looks like a valid encryption key (base64-like, reasonable length)
+      // Encryption keys are typically 32+ characters when base64 encoded
+      const trimmedFragment = fragment.trim();
+      if (trimmedFragment.length >= 20) {
+        setEncryptionKey(trimmedFragment);
+        sessionStorage.setItem(`room_key_${id}`, trimmedFragment);
+      } else {
+        console.warn("URL fragment is too short to be a valid encryption key, ignoring");
+      }
     } else {
       // Try to load from sessionStorage (not localStorage)
       const storedKey = sessionStorage.getItem(`room_key_${id}`);
@@ -178,8 +185,9 @@ export default function Room() {
           }
           setIsCreator(true);
         } else {
-          // Non-password room - only original creator is admin
-          setIsCreator(isOriginalCreator);
+          // Non-password (public) room - everyone is a creator
+          // This allows full access to settings and content management on any device
+          setIsCreator(true);
         }
       }
 
@@ -508,7 +516,7 @@ export default function Room() {
     expiry?: string | null;
   }) => {
     // For password-protected rooms: anyone with password can modify settings
-    // For non-password rooms: check if creator token exists
+    // For public (non-password) rooms: everyone can modify settings
     if (room?.password) {
       // Password-protected room: verify we have the password
       if (!encryptionKey) {
@@ -516,14 +524,8 @@ export default function Room() {
         setShowPasswordDialog(true);
         return;
       }
-    } else {
-      // Non-password room: check creator token if room has one
-      const creatorToken = localStorage.getItem(`room_creator_${id}`);
-      if (room?.creator_token && (!creatorToken || creatorToken !== room.creator_token)) {
-        toast.error("Only room creator can modify settings");
-        return;
-      }
     }
+    // For public rooms, no verification needed - everyone has access
 
     // Prepare parameters for RPC call
     const rpcParams: any = {
@@ -538,13 +540,8 @@ export default function Room() {
         return;
       }
       rpcParams.p_current_password_hash = await hashPassword(currentPassword.trim());
-    } else {
-      // For non-password rooms, send creator_token if available
-      const creatorToken = localStorage.getItem(`room_creator_${id}`);
-      if (creatorToken) {
-        rpcParams.p_creator_token = creatorToken;
-      }
     }
+    // For public rooms, don't send creator_token - backend will allow access
 
     // Handle password changes
     if (updates.password !== undefined) {
@@ -881,14 +878,8 @@ export default function Room() {
         setShowPasswordDialog(true);
         return;
       }
-    } else {
-      // Non-password room: check creator token if room has one
-      const creatorToken = localStorage.getItem(`room_creator_${id}`);
-      if (room?.creator_token && (!creatorToken || creatorToken !== room.creator_token)) {
-        toast.error("Only room creator can delete the room");
-        return;
-      }
     }
+    // For public rooms, no verification needed - everyone has access
 
     try {
       // Prepare RPC parameters
@@ -904,13 +895,8 @@ export default function Room() {
           return;
         }
         rpcParams.p_current_password_hash = await hashPassword(currentPassword.trim());
-      } else {
-        // For non-password rooms, send creator_token if available
-        const creatorToken = localStorage.getItem(`room_creator_${id}`);
-        if (creatorToken) {
-          rpcParams.p_creator_token = creatorToken;
-        }
       }
+      // For public rooms, don't send creator_token - backend will allow access
 
       const { data, error } = await supabase.rpc('delete_room', rpcParams);
 
@@ -1012,6 +998,7 @@ export default function Room() {
                   isPasswordProtected={!!room?.password}
                   isEncrypted={!!encryptionKey}
                   isCreator={isCreator}
+                  isActualCreator={isCreator} // Everyone is creator for public rooms, anyone with password is creator for private rooms
                   onSettingsUpdate={updateRoomSettings}
                   onDeleteRoom={deleteRoom}
                 />

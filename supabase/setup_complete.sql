@@ -139,11 +139,11 @@ BEGIN
   END IF;
 
   -- Determine authorization:
-  -- 1. If room has password: require current password hash to match
-  -- 2. If room has no password: require creator_token to match (if room has one)
-  -- 3. If no password and no creator_token in room: allow update (public room)
+  -- 1. If room has password: require current password hash to match (anyone with password is creator)
+  -- 2. If room has no password: allow update (public room - everyone is creator)
   IF v_room_password IS NOT NULL THEN
     -- Password-protected room: verify current password
+    -- Anyone with correct password gets full access
     IF p_current_password_hash IS NULL OR p_current_password_hash != v_room_password THEN
       RETURN json_build_object(
         'success', false,
@@ -151,17 +151,8 @@ BEGIN
       );
     END IF;
     v_authorized := TRUE;
-  ELSIF v_room_creator_token IS NOT NULL AND p_creator_token IS NOT NULL THEN
-    -- Non-password room with creator: verify creator_token
-    IF v_room_creator_token != p_creator_token THEN
-      RETURN json_build_object(
-        'success', false,
-        'error', 'Unauthorized: Invalid creator token'
-      );
-    END IF;
-    v_authorized := TRUE;
   ELSE
-    -- Public room (no password, no creator_token): allow update
+    -- Public room (no password): everyone has access, no verification needed
     v_authorized := TRUE;
   END IF;
 
@@ -231,23 +222,17 @@ BEGIN
     END IF;
 
     -- Determine authorization:
-    -- 1. If room has password: require current password hash to match
-    -- 2. If room has no password: require creator_token to match (if room has one)
-    -- 3. If no password and no creator_token in room: allow deletion (public room)
+    -- 1. If room has password: require current password hash to match (anyone with password is creator)
+    -- 2. If room has no password: allow deletion (public room - everyone is creator)
     IF v_room_password IS NOT NULL THEN
         -- Password-protected room: verify current password
+        -- Anyone with correct password gets full access
         IF p_current_password_hash IS NULL OR p_current_password_hash != v_room_password THEN
             RETURN json_build_object('success', FALSE, 'error', 'Unauthorized: Invalid password.');
         END IF;
         v_authorized := TRUE;
-    ELSIF v_room_creator_token IS NOT NULL AND p_creator_token IS NOT NULL THEN
-        -- Non-password room with creator: verify creator_token
-        IF v_room_creator_token != p_creator_token THEN
-            RETURN json_build_object('success', FALSE, 'error', 'Unauthorized: Invalid creator token.');
-        END IF;
-        v_authorized := TRUE;
     ELSE
-        -- Public room (no password, no creator_token): allow deletion
+        -- Public room (no password): everyone has access, no verification needed
         v_authorized := TRUE;
     END IF;
 
